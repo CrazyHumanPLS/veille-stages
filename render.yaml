@@ -21,6 +21,7 @@ services:
       - {key: INVITE_CODE, sync: false}       # facultatif : code demandé à l'inscription en mode invite
       - {key: CONTACT_EMAIL, sync: false}     # facultatif : adresse affichée dans « Confidentialité »
       - {key: DONATE_URL, sync: false}        # facultatif : lien « Soutenir le site » (Ko-fi, PayPal…)
+      - {key: GA_ID, sync: false}             # facultatif : identifiant Google Analytics (G-XXXXXXXXXX), avec bandeau de consentement
       - {key: LEGAL_NAME, sync: false}        # facultatif : nom affiché comme éditeur dans les mentions légales
       - {key: PREMIUM_URL, sync: false}       # facultatif : lien de paiement de la formule Premium (https://…)
       - {key: PREMIUM_PRICE, sync: false}     # facultatif : prix affiché, par exemple « 4 € par mois »

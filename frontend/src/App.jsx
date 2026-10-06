@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, post, put, ago, Dot, List, getToken, setToken, setOnLogout, useAction } from "./api.jsx";
 import Settings from "./Settings.jsx";
 import Admin from "./Admin.jsx";
+import * as audience from "./analytics.js";
 
 const STATUS = ["À postuler", "Postulé", "Relancé", "Entretien", "Offre", "Refus"];
 const TASKS = { fit: "Analyser l'offre", letter: "Écrire ma lettre", cv: "Adapter mon CV", message: "Message au recruteur", interview: "Simuler l'entretien", targets: "Trouver des cibles" };
@@ -25,9 +26,23 @@ function Privacy({ info }) {
       <li><b>Secrets :</b> ta clé Gemini et tes adresses d'alerte sont chiffrées dans la base et ne sont jamais réaffichées.</li>
       <li><b>Tes droits :</b> tu peux télécharger toutes tes données et supprimer ton compte à tout moment, depuis l'onglet Réglages. La suppression est immédiate et définitive.</li>
       <li><b>Comptes inactifs :</b> sans visite pendant 3 semaines, ta veille se met en pause ; elle reprend dès que tu te reconnectes.</li>
-      <li><b>Cookies :</b> aucun cookie publicitaire ni traceur. Seule ta connexion est gardée dans ton navigateur.</li>
+      {info?.ga
+        ? <li><b>Cookies :</b> aucun cookie publicitaire. Si tu l'acceptes, Google Analytics dépose des cookies pour compter les visites et les écrans consultés ; ni ton CV, ni ton adresse e-mail, ni tes offres ne lui sont envoyés. Tu peux changer d'avis à tout moment avec le lien « Cookies » en bas de page.</li>
+        : <li><b>Cookies :</b> aucun cookie publicitaire ni traceur. Seule ta connexion est gardée dans ton navigateur.</li>}
     </ul>
     {info?.contact && <p className="mute">Une question sur tes données : {info.contact}</p>}
+  </div>);
+}
+
+// Bandeau de consentement : n'existe que si le site mesure son audience. Refuser est aussi simple qu'accepter.
+function Consent({ info, ask, onDone, onMore }) {
+  if (!info?.ga || !ask) return null;
+  return (<div className="consent" role="dialog" aria-label="Mesure d'audience">
+    <p>Pour savoir combien de personnes utilisent le site, on aimerait mesurer son audience avec Google Analytics, qui dépose des cookies. Tu peux refuser : le site fonctionne exactement pareil. <a href="#" onClick={e => { e.preventDefault(); onMore(); }}>En savoir plus</a></p>
+    <div className="row">
+      <button className="btn ghost" onClick={() => { audience.refuse(); onDone(); }}>Refuser</button>
+      <button className="btn" onClick={() => { audience.accept(info.ga); onDone(); }}>Accepter</button>
+    </div>
   </div>);
 }
 
@@ -105,7 +120,7 @@ const DEMO = [
   { s: 61, t: "Stage DevOps plateforme", c: "Lumen Cloud", p: "Nanterre", w: "Domaine voisin : Kubernetes demandé, peu présent dans ton CV." },
 ];
 
-function Auth({ info, onOk }) {
+function Auth({ info, onOk, onCookies }) {
   const closed = info?.signup === "closed";
   const [mode, setMode] = useState("signup");
   const [f, setF] = useState({ email: "", password: "", name: "", invite: "", consent: false });
@@ -175,6 +190,7 @@ function Auth({ info, onOk }) {
         <a href="#" onClick={open("terms")}>Conditions d'utilisation</a>
         <a href="#" onClick={open("privacy")}>Confidentialité</a>
         <a href="#" onClick={open("imprint")}>Mentions légales</a>
+        {info?.ga && <a href="#" onClick={e => { e.preventDefault(); onCookies(); }}>Cookies</a>}
       </footer>
     </div>
   </div>);
@@ -388,6 +404,9 @@ export default function App() {
   const [tabAsked, setTabRaw] = useState(hashTab);
   const [ctx, setCtx] = useState(null);          // offre ouverte dans l'assistant
   const [feedKey, setFeedKey] = useState(0);     // augmente pour recharger la liste des offres
+  const [askCookies, setAskCookies] = useState(false);
+  useEffect(() => { if (info?.ga) { audience.resume(info.ga); setAskCookies(!audience.choice()); } }, [info]);
+  const consent = <Consent info={info} ask={askCookies} onDone={() => setAskCookies(false)} onMore={() => { if (me) setTab("privacy"); else document.querySelector("#legal footer a:nth-child(2)")?.click(); }} />;
   const [toastMsg, setToastMsg] = useState(null);
   const toastTimer = useRef(0);
   const showToast = useCallback((text, undo) => { clearTimeout(toastTimer.current); setToastMsg({ text, undo }); toastTimer.current = setTimeout(() => setToastMsg(null), 6000); }, []);
@@ -408,6 +427,7 @@ export default function App() {
     const t = setTimeout(() => window.scrollTo(0, y), 0);
     return () => clearTimeout(t);
   }, [tabAsked]);
+  useEffect(() => { audience.page(me ? tabAsked : "accueil"); }, [tabAsked, !!me, askCookies]);
   const [apps, setApps] = useState([]);
   const [offer, setOffer] = useState("");
   const [cv, setCv] = useState("");
@@ -425,7 +445,7 @@ export default function App() {
   }, []);
   useEffect(() => { if (info?.name) document.title = info.name; }, [info]);
   if (me === undefined) return <div className="loading"><div><div className="brand" style={{ justifyContent: "center", fontSize: "1.4rem" }}><Mark />{info?.name || "Veille Stages"}</div><p className="mute">Chargement… (jusqu'à une minute si le serveur dormait)</p></div></div>;
-  if (!me) return <Auth info={info} onOk={start} />;
+  if (!me) return <><Auth info={info} onOk={start} onCookies={() => setAskCookies(true)} />{consent}</>;
   const track = async a => { const r = await post("/api/applications", a); reload(); return r.id; };
   const untrack = async id => { if (id) await api(`/api/applications/${id}`, { method: "DELETE" }); reload(); };
   const toAI = (t, k = "", o = null) => { setOffer(t); setCv(k); setCtx(o); setTab("ai"); };
@@ -457,11 +477,13 @@ export default function App() {
       {tab === "privacy" && <Legal info={info} />}
       <footer className="mute">
         <a href="#" onClick={e => { e.preventDefault(); setTab("privacy"); }}>Conditions, confidentialité et mentions légales</a>
+        {info?.ga && <a href="#" onClick={e => { e.preventDefault(); setAskCookies(true); }}>Cookies</a>}
         {info?.donate && /^https:\/\//.test(info.donate) && <a href={info.donate} target="_blank" rel="noopener noreferrer">Soutenir le site</a>}
       </footer>
     </div>
     <nav className="bottombar" aria-label="Sections">{[["feed", "Offres"], ["track", "Suivi"], ["ai", "Assistant"], ["profile", "Profil"], ["settings", "Réglages"]].map(([k, l]) =>
       <button key={k} className={tab === k ? "on" : ""} aria-current={tab === k ? "page" : undefined} onClick={() => setTab(k)}><Icon name={k} /><span>{l}</span></button>)}</nav>
+    {consent}
     {toastMsg && <div className="toast" role="status"><span>{toastMsg.text}</span>{toastMsg.undo && <button onClick={async () => { const u = toastMsg.undo; setToastMsg(null); await u(); }}>Annuler</button>}</div>}
   </div>);
 }

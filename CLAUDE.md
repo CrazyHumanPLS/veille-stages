@@ -21,7 +21,7 @@ Créé le 06/10/2026 à partir de l'application personnelle `stage-app` (même a
 Variables d'environnement (valeurs dans Render uniquement) : `DATABASE_URL`, `SECRET_KEY` (créée par Render,
 ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI_API_KEY` (clé commune),
 `GEMINI_MODEL`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `SIGNUP_MODE`, `INVITE_CODE`, `CONTACT_EMAIL`, `DONATE_URL`,
-`TELEGRAM_TOKEN`, `TELEGRAM_BOT`, `COLLECT_EVERY_SEC`, `LEGAL_NAME`, `PREMIUM_URL`, `PREMIUM_PRICE`.
+`TELEGRAM_TOKEN`, `TELEGRAM_BOT`, `COLLECT_EVERY_SEC`, `LEGAL_NAME`, `PREMIUM_URL`, `PREMIUM_PRICE`, `GA_ID`.
 
 ## Choix de conception (décidés le 06/10/2026, l'utilisateur a délégué)
 
@@ -86,6 +86,9 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   prix `PREMIUM_PRICE`), statistiques d'usage dans Administration, parcours de démarrage en 2 étapes, conditions
   d'utilisation et mentions légales (`LEGAL_NAME`, `CONTACT_EMAIL`), écran d'erreur, site installable sur téléphone
   (`frontend/public/manifest.webmanifest` et icônes, sans service worker pour éviter les versions périmées).
+- Mesure d'audience facultative : variable `GA_ID` (Google Analytics). Bandeau « Refuser / Accepter », rien n'est
+  chargé avant l'accord (`frontend/src/analytics.js`), lien « Cookies » en bas de page pour changer d'avis. Sans
+  `GA_ID` : aucun bandeau, aucun cookie de mesure.
 - 8 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.

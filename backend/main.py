@@ -3,6 +3,7 @@ import hmac
 import io
 import os
 import pathlib
+import re
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -31,6 +32,9 @@ COLLECT_EVERY = int(os.getenv("COLLECT_EVERY_SEC", "180"))  # 0 = pas de collect
 APP_NAME = os.getenv("APP_NAME", "Veille Stages")
 SIGNUPS_PER_HOUR = int(os.getenv("SIGNUPS_PER_HOUR", "30"))    # pour tout le site
 SIGNUPS_PER_DAY = int(os.getenv("SIGNUPS_PER_DAY", "120"))
+# Mesure d'audience Google Analytics (facultatif), par exemple G-AB12CD34EF. Vide = aucune mesure, aucun bandeau.
+_ga = os.getenv("GA_ID", "").strip()
+GA_ID = _ga if re.fullmatch(r"G-[A-Z0-9]{4,20}", _ga) else ""
 
 
 async def _loop():
@@ -70,6 +74,14 @@ SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=31536000",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
 }
+
+
+if GA_ID:   # le navigateur n'accepte Google Analytics que si le site s'en sert (chargé après accord du visiteur)
+    SECURITY_HEADERS["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https://*.google-analytics.com https://www.googletagmanager.com; font-src 'self' data:; "
+        "connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com; "
+        "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'")
 
 
 @app.middleware("http")
@@ -143,7 +155,7 @@ def public():
             "limits": {k: lim[k] for k in quota.LABELS}, "premium_limits": {k: lim["p_" + k] for k in quota.LABELS},
             # Premium : simple lien de paiement (Stripe, PayPal, Lydia…) ; l'administrateur active ensuite le compte.
             "premium": {"url": os.getenv("PREMIUM_URL", ""), "price": os.getenv("PREMIUM_PRICE", "")},
-            "shared_ai": bool(quota.shared_key())}
+            "shared_ai": bool(quota.shared_key()), "ga": GA_ID}
 
 
 # ---------- comptes ----------
