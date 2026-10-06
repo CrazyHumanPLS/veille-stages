@@ -710,3 +710,23 @@ def test_domains_from_cv():
         cv(h2, "VHDL FPGA STM32 C embarqué ")
         crit = c.get("/api/criteria", headers=h2).json()
         assert crit["domains"] == ["data"] and crit["goal"] == "Je veux un stage en data science à Lyon"
+
+
+def test_own_key_scores_the_rest():
+    """Ajouter sa propre clé remet en file les offres restées sans note (et seulement celles au-dessus du seuil)."""
+    import time
+    from sqlalchemy import insert, select
+    u = accounts.create("reste@ex.fr", "Reste", "motdepasse")
+    with db.engine.begin() as c:
+        for i, (kw, ai_s, state) in enumerate([(80, None, "new"), (20, None, "new"), (90, 70, "new"), (85, None, "hidden")]):
+            oid = f"rq{i}"
+            c.execute(insert(db.offers).values(id=oid, source="X", company="X", title=f"Stage {i}", place="Paris",
+                                               url="https://x.io", description="", published="", ext_id=oid,
+                                               first_seen=time.time(), kw_score=kw))
+            c.execute(insert(db.user_offers).values(user_id=u["id"], offer_id=oid, kw_score=kw, ai_score=ai_s,
+                                                    state=state, notified=2))
+    assert collector.requeue_unscored(u) == 1
+    with db.engine.connect() as c:
+        rows = dict(c.execute(select(db.user_offers.c.offer_id, db.user_offers.c.notified)
+                              .where(db.user_offers.c.user_id == u["id"])).all())
+    assert rows == {"rq0": 0, "rq1": 2, "rq2": 2, "rq3": 2}

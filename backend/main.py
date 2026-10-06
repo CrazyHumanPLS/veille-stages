@@ -448,6 +448,8 @@ async def put_gemini(body: Key, bg: BackgroundTasks, u: dict = Depends(current))
     u["secrets"]["gemini"] = key
     accounts.save_secrets(u)
     accounts.set_fields(u["id"], ai_error="")
+    if key:
+        collector.requeue_unscored(u)   # les offres laissées sans note par la limite du jour vont être notées
     bg.add_task(collector.process_one, u["id"])
     return me_view(accounts.by_id(u["id"]))
 

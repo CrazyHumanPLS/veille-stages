@@ -122,7 +122,10 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   aussi `domaines` et `objectif` (`ai.analyse_cv`) ; `main._analyse` les enregistre comme domaines et phrase de
   recherche. Dès que la personne a choisi elle-même, ses choix ne sont plus modifiés. `FIRST_RUN_AI` passe de 40 à 30
   pour laisser 10 notes aux nouveautés le jour de l'inscription.
-- 12 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
+- Clé personnelle (07/10) : en l'enregistrant, les offres restées sans note de l'IA (au-dessus de `ai_min_kw`, non
+  masquées) repassent en file (`collector.requeue_unscored`) et sont notées, 40 par passage ; le plafond
+  `FIRST_RUN_AI` ne s'applique plus à qui a sa propre clé. Ces offres peuvent déclencher une alerte ou un récapitulatif.
+- 13 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.
 

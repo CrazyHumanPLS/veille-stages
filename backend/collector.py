@@ -313,7 +313,7 @@ async def process_user(u: dict, budget: dict) -> dict:
     if quota.ai_available(u) and profile.strip():
         # Économie de quota : sous le seuil, l'offre garde son score par mots-clés et n'est pas envoyée à l'IA.
         to_score = [o for o in pending if o["ai_score"] is None and o["kw_score"] >= crit["ai_min_kw"]]
-        if first:
+        if first and not accounts.own_key(u):   # avec sa propre clé, pas de plafond : tout le stock est noté
             to_score = to_score[:FIRST_RUN_AI]
         for i in range(0, len(to_score), 8):
             batch = to_score[i:i + 8]
@@ -416,6 +416,16 @@ async def process_user(u: dict, budget: dict) -> dict:
     if wait:
         result["waiting"] = len(pending) - len(handle)
     return result
+
+
+def requeue_unscored(u: dict) -> int:
+    """Quand quelqu'un ajoute sa propre clé : remet en file les offres restées sans note de l'IA faute de quota.
+    Elles seront notées aux passages suivants (40 par passage)."""
+    uo = db.user_offers
+    floor = scoring.user_criteria(u)["ai_min_kw"]
+    with db.engine.begin() as c:
+        return c.execute(update(uo).where(uo.c.user_id == u["id"], uo.c.ai_score.is_(None), uo.c.notified == 2,
+                                          uo.c.state == "new", uo.c.kw_score >= floor).values(notified=0)).rowcount
 
 
 async def process_one(uid: int, budget: dict | None = None) -> dict:
