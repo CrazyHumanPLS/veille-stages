@@ -186,7 +186,7 @@ td .tag{margin:0 0 0 6px}
 .demo .otitle{font-size:1rem}
 .demo .why{font-size:.9rem;margin-top:7px}
 .demo .score{width:56px}.demo .score span{font-size:1.6rem}
-.ping{position:relative;z-index:2;margin:0 14px -10px 0;max-width:calc(100% - 28px);display:flex;flex-direction:column;background:var(--ink);color:#fff;padding:10px 16px;border-radius:16px 16px 4px 16px;box-shadow:0 12px 28px rgba(20,26,60,.25);font-size:.88rem;animation:ping .5s .5s cubic-bezier(.2,.9,.3,1.3) backwards}
+.ping{position:relative;z-index:2;margin:0 14px 10px 0;max-width:calc(100% - 28px);display:flex;flex-direction:column;background:var(--ink);color:#fff;padding:10px 16px;border-radius:16px 16px 4px 16px;box-shadow:0 12px 28px rgba(20,26,60,.25);font-size:.88rem;animation:ping .5s .5s cubic-bezier(.2,.9,.3,1.3) backwards}
 .ping b{color:var(--hl)}
 @keyframes ping{from{opacity:0;transform:translateY(14px) scale(.94)}}
 .steps.wrap{max-width:1120px;padding:10px 24px 70px}
