@@ -125,9 +125,12 @@ async def adzuna(h: httpx.AsyncClient, queries: list[str]) -> list[dict]:
 async def greenhouse(h: httpx.AsyncClient, c: dict) -> list[dict]:
     r = await h.get(f"https://boards-api.greenhouse.io/v1/boards/{c['token']}/jobs", params={"content": "true"})
     r.raise_for_status()
-    return [_offer(c["name"], j.get("id"), c["name"], j.get("title"), (j.get("location") or {}).get("name", ""),
-                   j.get("absolute_url"), j.get("content", ""), j.get("first_published") or j.get("updated_at", ""))
-            for j in r.json().get("jobs", [])]
+
+    def parse():   # grosses réponses (plusieurs Mo) : lues dans un fil à part pour ne pas figer le site
+        return [_offer(c["name"], j.get("id"), c["name"], j.get("title"), (j.get("location") or {}).get("name", ""),
+                       j.get("absolute_url"), j.get("content", ""), j.get("first_published") or j.get("updated_at", ""))
+                for j in r.json().get("jobs", [])]
+    return await asyncio.to_thread(parse)
 
 
 async def lever(h: httpx.AsyncClient, c: dict) -> list[dict]:

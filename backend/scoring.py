@@ -2,6 +2,7 @@
 import datetime as dt
 import difflib
 import hashlib
+import functools
 import html
 import re
 import unicodedata
@@ -144,8 +145,16 @@ def strip_html(s: str) -> str:
     return re.sub(r"[ \t]+", " ", re.sub(r"\n\s*\n+", "\n", s)).strip()
 
 
+@functools.lru_cache(maxsize=8192)
+def _term(term: str):
+    n = norm(term)
+    return n, re.compile(r"(?<![a-z0-9])" + re.escape(n) + r"(?![a-z0-9])")
+
+
 def _has(term: str, text: str) -> bool:
-    return re.search(r"(?<![a-z0-9])" + re.escape(norm(term)) + r"(?![a-z0-9])", text) is not None
+    # Recherche simple d'abord (très rapide) : l'expression complète ne sert qu'à vérifier les limites du mot.
+    n, rx = _term(term)
+    return bool(n) and n in text and rx.search(text) is not None
 
 
 def fingerprint(source: str, ext_id: str, company: str, title: str, place: str) -> str:
@@ -256,6 +265,7 @@ def published_date(raw: str, ref_ts: float | None = None) -> str:
 def company_key(company: str) -> str:
     n = re.sub(r"\b(sas|sa|se|group|groupe|france|technologies|technology)\b", " ", norm(company))
     return re.sub(r"[^a-z0-9]", "", n)
+@functools.lru_cache(maxsize=20000)
 
 
 def title_key(title: str) -> str:

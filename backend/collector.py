@@ -137,13 +137,17 @@ def store(name: str, raws: list[dict], crit: dict, distinct: bool = False) -> in
 
 MAX_PARALLEL = int(os.getenv("COLLECT_PARALLEL", "6"))   # sources lues en même temps (mémoire limitée sur Render gratuit)
 _slots: asyncio.Semaphore | None = None
+_store_turn: asyncio.Lock | None = None
 
 
 async def _run_source(name: str, coro, crit: dict, distinct: bool = False) -> int:
     try:
         async with _slots:
             raws = await coro
-        return store(name, raws, crit, distinct)
+        # Le tri et l'enregistrement se font dans un fil à part : sinon le site ne répond plus pendant la collecte
+        # (c'était la cause des « health check timed out » de Render). Un seul enregistrement à la fois.
+        async with _store_turn:
+            return await asyncio.to_thread(store, name, raws, crit, distinct)
     except Exception as e:  # une source en panne ne doit jamais bloquer les autres
         _state(name, False, error=f"{type(e).__name__}: {e}")
         return 0
@@ -163,9 +167,10 @@ async def collect(force: bool = False) -> int:
     queries = scoring._merge(*(scoring.domain_lists(k, site)["adzuna"] for k in domains_in_use()))
     # Plus il y a de requêtes, plus on espace les passages, pour rester dans le budget quotidien d'Adzuna.
     adzuna_every = max(EVERY["adzuna"], 1440 * len(queries) / max(1, ADZUNA_CALLS_PER_DAY))
-    load_seen()
+    await asyncio.to_thread(load_seen)
     jobs = []
-    global _slots
+    global _slots, _store_turn
+    _store_turn = asyncio.Lock()
     _slots = asyncio.Semaphore(MAX_PARALLEL)   # créé ici : lié à la boucle asyncio du passage en cours
     async with httpx.AsyncClient(timeout=30, headers=sources.UA, follow_redirects=True) as h:
         if sources.ft_enabled() and _due("France Travail", EVERY["ft"], force):
@@ -280,7 +285,7 @@ async def process_user(u: dict, budget: dict) -> dict:
     uid, now = u["id"], time.time()
     site = scoring.criteria()
     crit = scoring.user_criteria(u, site)
-    created = sync_user(u, site=site)
+    created = await asyncio.to_thread(sync_user, u, False, site)
     first = not u["bootstrapped"]
     profile = prof.block(u)
     slots = sorted(prof.cvs(u))
@@ -424,7 +429,7 @@ async def resync_one(uid: int) -> dict:
     async with _locks.setdefault(uid, asyncio.Lock()):
         u = accounts.by_id(uid)
         if u and not u["disabled"]:
-            sync_user(u, full=True)
+            await asyncio.to_thread(sync_user, u, True)
     return await process_one(uid)
 
 
@@ -458,7 +463,7 @@ async def run_once(force: bool = False) -> dict:
         result["new"] = new
         db.kv_set("last_run", {"at": time.time(), **result})
         if int(time.time()) % 50 == 0:
-            db.prune()
+            await asyncio.to_thread(db.prune)
         return result
     finally:
         db.kv_set("lock", 0)

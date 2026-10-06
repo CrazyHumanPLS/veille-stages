@@ -110,6 +110,11 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   (`apply.workable.com/api/v1/widget/accounts/XXX`) et Teamtailor (`XXX.teamtailor.com/jobs.rss`), The Muse, Jooble
   et Careerjet (clé à demander). Il n'existe pas de source gratuite couvrant « toutes les entreprises de France ».
   L'utilisateur a demandé d'économiser son quota Claude : pas d'agents de recherche en série.
+- Pannes Render « health check timed out » (07/10) : la collecte tourne dans le même processus que le site et le
+  tri des offres (calcul bloquant) figeait le serveur. Corrigé : `store`, `sync_user`, `load_seen`, `prune` et la
+  lecture des réponses Greenhouse passent par `asyncio.to_thread` ; recherche de mots-clés accélérée (`scoring._has`,
+  `title_key` en cache). Mesure avec réseau simulé (58 pages de 400 offres) : pire gel du site 0,3 s contre 2,4 s et plus.
+  Règle : aucun traitement long directement dans une fonction `async`.
 - 10 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.
