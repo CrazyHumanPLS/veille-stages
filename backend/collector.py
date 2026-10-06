@@ -248,7 +248,7 @@ def _best(o: dict) -> int:
 
 
 def _lines(offers: list[dict]) -> str:
-    return "\n".join(f"• {_best(o)}/100 — <a href=\"{o['url']}\">{notify.html.escape(o['title'][:70])}</a> "
+    return "\n".join(f"• {_best(o)}/100 — <a href=\"{notify.html.escape(o['url'], quote=True)}\">{notify.html.escape(o['title'][:70])}</a> "
                      f"({notify.html.escape((o['company'] or '?')[:30])})" for o in offers)
 
 

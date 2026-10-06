@@ -224,6 +224,8 @@ async def rss(h: httpx.AsyncClient, url: str, company: str = "", label: str = ""
     """company = entreprise du flux (site carrières) ; vide pour un flux multi-entreprises (alerte Google)."""
     r = await h.get(url)
     r.raise_for_status()
+    if len(r.content) > 5_000_000:
+        raise RuntimeError("flux trop volumineux (plus de 5 Mo), ignoré")
     root = ET.fromstring(r.content)
     items = [n for n in root.iter() if n.tag.split("}")[-1] in ("item", "entry")]
     out = []

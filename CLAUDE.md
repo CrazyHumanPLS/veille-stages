@@ -30,7 +30,7 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   l'alerte envoyée ou non. `applications` et `usage` ont un `user_id`.
 - **Coût de l'IA nul pour le propriétaire.** Clé commune avec limites par jour et par personne (40 notes,
   5 générations, 6 analyses de CV, plafond global 800 appels) ou clé Gemini personnelle sans limite.
-  Réglable dans Administration (kv `limits`). Pas de publicité : inutile à cette échelle. Lien de don
+  Réglable dans Administration (kv `limits`). Pas de publicité : rapporte trop peu à cette échelle. Lien de don
   facultatif (`DONATE_URL`).
 - **Alertes par personne** : webhook Discord personnel (conseillé), sujet ntfy, ou Telegram si le site a un bot.
 - **Comptes** : e-mail + mot de passe (scrypt), jeton signé 30 jours, pas d'envoi d'e-mail. Mot de passe oublié :
@@ -68,12 +68,24 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   ce qu'affiche Google AI Studio pour la clé commune.
 - Avec une clé gratuite, Google peut utiliser les textes envoyés : c'est écrit dans la page Confidentialité.
 
-## État au 06/10/2026
+## État au 06/10/2026 (soir)
 
-- Code écrit, 4 tests automatiques réussis, site compilé et parcouru dans un navigateur en local
-  (inscription, offres, réglages, administration). Jamais mis en ligne, jamais testé avec les vraies API.
+- **En ligne** sur Render (nouveau service) avec une nouvelle base Supabase ; l'ancien service `stage-m2` est suspendu.
+  L'utilisateur a confirmé que tout fonctionne avec les vraies API.
+- Ajouts du jour : navigation avec le bouton Retour du navigateur (onglets dans l'adresse, `#feed`, `#ai`…),
+  rappel de l'offre dans l'Assistant avec « Garder » et « J'ai postulé », seuil `ai_min_kw` (40 par défaut : l'IA ne
+  note pas les offres sous ce score par mots-clés), nouveau design (surligneur, polices Bricolage Grotesque et
+  Figtree hébergées sur le site, barre d'onglets en bas sur téléphone, message « Annuler »).
+- Sécurité : plafonds d'inscription pour tout le site, limitation des connexions sur les échecs seulement, liens
+  d'offres limités à http(s), en-têtes de sécurité (CSP), mentions Discord neutralisées, limites sur les retris,
+  taille des PDF (4 Mo) et des flux RSS (5 Mo). Relecture faite à la main ; le plugin claude-security n'a pas pu
+  tourner dans la session (outil de workflow indisponible) : analyse complète à refaire avant une ouverture large.
+- 6 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
+- Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
+  dans les dépôts autorisés pour que la session puisse pousser elle-même.
 
 ## Pistes non faites
 
-Vérification de l'adresse e-mail et « mot de passe oublié » par e-mail ; récapitulatif quotidien ;
-option alternance ou autres régions ; import des candidatures de l'application personnelle.
+L'utilisateur vise à terme une vraie application (web puis mobile) rapportant 200 à 300 € par mois. Ordre conseillé :
+mesurer l'usage (statistiques dans Administration), puis alternance et toute la France, alertes par e-mail,
+vérification d'adresse et mot de passe oublié, site installable sur téléphone, et seulement ensuite offre payante.

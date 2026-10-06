@@ -57,6 +57,31 @@ app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"],
                    allow_methods=["*"], allow_headers=["*"])
 
 
+# ---------- en-têtes de sécurité ----------
+# Le site ne charge que ses propres fichiers : même si un texte piégé arrivait à l'écran, le navigateur
+# refuserait d'exécuter un script venu d'ailleurs ou d'envoyer des données à un autre site.
+SECURITY_HEADERS = {
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                               "img-src 'self' data:; font-src 'self' data:; connect-src 'self'; "
+                               "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Strict-Transport-Security": "max-age=31536000",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+}
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for k, v in SECURITY_HEADERS.items():
+        response.headers.setdefault(k, v)
+    if request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-store")   # jamais de données personnelles en cache
+    return response
+
+
 # ---------- garde-fous contre les essais en rafale (mémoire du serveur, suffisant pour un seul service) ----------
 _hits: dict[str, list[float]] = {}
 
@@ -375,6 +400,7 @@ def get_criteria(u: dict = Depends(current)):
 
 @app.put("/api/criteria")
 def put_criteria(body: dict, bg: BackgroundTasks, u: dict = Depends(current)):
+    throttle(f"crit:{u['id']}", 12, 600, "Trop de modifications d'affilée. Réessaie dans quelques minutes.")
     s = u["settings"]
     if isinstance(body.get("goal"), str) and body["goal"].strip():
         s["goal"] = " ".join(body["goal"].split())[:300]
@@ -456,6 +482,7 @@ def get_profile(u: dict = Depends(current)):
 
 @app.put("/api/profile")
 async def put_profile(body: CvText, bg: BackgroundTasks, u: dict = Depends(current)):
+    throttle(f"cv:{u['id']}", 20, 3600)
     return await _store_cv(u, bg, body.slot, body.text)
 
 
@@ -473,8 +500,8 @@ def put_label(body: CvLabel, u: dict = Depends(current)):
 async def upload_cv(bg: BackgroundTasks, slot: str = "cv1", file: UploadFile = File(...), u: dict = Depends(current)):
     throttle(f"cv:{u['id']}", 20, 3600)
     data = await file.read()
-    if len(data) > 8_000_000:
-        raise HTTPException(400, "Fichier trop lourd (8 Mo maximum)")
+    if len(data) > 4_000_000:
+        raise HTTPException(400, "Fichier trop lourd (4 Mo maximum)")
     name = (file.filename or "").lower()
     if name.endswith(".pdf") or data[:4] == b"%PDF":
         try:

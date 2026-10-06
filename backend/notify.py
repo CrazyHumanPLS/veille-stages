@@ -61,7 +61,7 @@ async def _discord(url: str, text: str, button_url: str) -> None:
     md = html.unescape(re.sub(r"<[^>]+>", "", md))
     if button_url.startswith("http"):
         md += f"\n{button_url}"
-    r = await _post(url, json={"content": md[:1990]})
+    r = await _post(url, json={"content": md[:1990], "allowed_mentions": {"parse": []}})
     if r.status_code in (401, 403, 404):
         raise RuntimeError("webhook Discord refusé (supprimé ou adresse incomplète)")
     if r.status_code not in (200, 204):
