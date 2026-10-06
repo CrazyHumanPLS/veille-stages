@@ -29,9 +29,30 @@ function Privacy({ info }) {
   </div>);
 }
 
+const Mark = () => <span className="mark" aria-hidden="true" />;
+const ICONS = {
+  feed: "M4 6h16M4 12h16M4 18h10", track: "M5 12l4 4 10-10", ai: "M12 3l2.2 5.8L20 11l-5.8 2.2L12 19l-2.2-5.8L4 11l5.8-2.2z",
+  profile: "M12 12a4 4 0 100-8 4 4 0 000 8zm-7 8a7 7 0 0114 0", settings: "M4 7h10M18 7h2M4 17h2M10 17h10M16 4v6M8 14v6",
+};
+const Icon = ({ name }) => <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={ICONS[name]} /></svg>;
+
+function Score({ o }) {
+  const s = best(o);
+  return (<div className={`score ${tone(s)}`} title={o.ai_score == null ? "Score par mots-clés" : "Score de l'IA d'après ton CV"}>
+    <span>{s}</span>{o.ai_score == null && <small>mots-clés</small>}
+  </div>);
+}
+
+// Aperçu du produit sur la page d'accueil : exemples inventés, pas de vraies offres.
+const DEMO = [
+  { s: 92, t: "Stage ingénieur réseaux et sécurité", c: "Nordlink", p: "Massy", w: "Ton projet BGP et ton expérience Cisco couvrent l'essentiel de la mission." },
+  { s: 78, t: "Stagiaire analyste SOC", c: "Atelier Cyber", p: "Paris 9e", w: "Bon niveau attendu en SIEM, il te manque la partie EDR." },
+  { s: 61, t: "Stage DevOps plateforme", c: "Lumen Cloud", p: "Nanterre", w: "Domaine voisin : Kubernetes demandé, peu présent dans ton CV." },
+];
+
 function Auth({ info, onOk }) {
   const closed = info?.signup === "closed";
-  const [mode, setMode] = useState("login");
+  const [mode, setMode] = useState("signup");
   const [f, setF] = useState({ email: "", password: "", name: "", invite: "", consent: false });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -44,39 +65,62 @@ function Auth({ info, onOk }) {
     setBusy(false);
   };
   const lim = info?.limits;
-  return (<div className="wrap login">
-    <h1>{info?.name || "Veille Stages"}</h1>
-    <p className="lead">Les offres de stage arrivent toutes seules, notées d'après ton CV, avec une alerte sur ton téléphone dès qu'une bonne offre sort.</p>
-    <div className="tabs2">
-      <button className={mode === "login" ? "on" : ""} onClick={() => { setMode("login"); setErr(""); }}>Se connecter</button>
-      <button className={mode === "signup" ? "on" : ""} onClick={() => { setMode("signup"); setErr(""); }}>Créer un compte</button>
-    </div>
-    {mode === "signup" && closed ? <p className="note">Les inscriptions sont fermées pour le moment.</p> :
-      <form className="card form" onSubmit={go}>
-        {mode === "signup" && <label>Prénom<input value={f.name} onChange={set("name")} maxLength={80} autoComplete="given-name" /></label>}
-        <label>Adresse e-mail<input type="email" required value={f.email} onChange={set("email")} autoComplete="email" /></label>
-        <label>Mot de passe{mode === "signup" && " (8 caractères minimum)"}<input type="password" required minLength={mode === "signup" ? 8 : 1} value={f.password} onChange={set("password")} autoComplete={mode === "login" ? "current-password" : "new-password"} /></label>
-        {mode === "signup" && info?.signup === "invite" && <label>Code d'invitation<input required value={f.invite} onChange={set("invite")} /></label>}
-        {mode === "signup" && <label className="check"><input type="checkbox" checked={f.consent} onChange={set("consent")} />
-          <span>J'accepte que mon CV soit enregistré et analysé pour me proposer des offres. <a href="#" onClick={e => { e.preventDefault(); setShowPrivacy(!showPrivacy); }}>Voir le détail</a></span></label>}
-        <button className="btn" disabled={busy}>{busy ? "Un instant…" : mode === "login" ? "Se connecter" : "Créer mon compte"}</button>
-        {err && <p className="err">{err}</p>}
-        {mode === "login" && <p className="mute">Mot de passe oublié ? Demande à la personne qui t'a donné l'adresse du site : elle peut t'en créer un nouveau.</p>}
-      </form>}
-    {showPrivacy && <Privacy info={info} />}
-    {mode === "signup" && !closed && <div className="card">
-      <strong>Gratuit, et ça le reste</strong>
-      <ul>
-        <li>Offres collectées en continu sur les sites carrières et les agrégateurs.</li>
-        {lim && info.shared_ai && <li>IA incluse pour essayer : {lim.score} offres notées et {lim.assist} lettres ou analyses par jour.</li>}
-        <li>Sans limite si tu ajoutes ta propre clé Gemini (gratuite, 2 minutes).</li>
-        <li>Alertes sur ton téléphone par Discord ou ntfy.</li>
-      </ul>
-    </div>}
+  return (<div className="landing">
+    <div className="topbar"><div className="brand"><Mark />{info?.name || "Veille Stages"}</div></div>
+    <main className="hero">
+      <section className="pitch">
+        <h1>Arrête de chercher. Les bons stages arrivent tout seuls.</h1>
+        <p className="lead">On surveille les sites carrières jour et nuit. Chaque offre est notée d'après ton CV, et les meilleures arrivent sur ton téléphone dès leur mise en ligne.</p>
+        <div className="demo" aria-hidden="true">
+          <div className="ping"><b>Nouvelle offre, 92 sur 100</b><span>Stage ingénieur réseaux et sécurité, à l'instant</span></div>
+          <div className="sheet">{DEMO.map(d => (
+            <div className="offer" key={d.t}>
+              <div className={`score ${tone(d.s)}`}><span>{d.s}</span></div>
+              <div className="body"><div className="otitle">{d.t}</div><p className="ometa"><b>{d.c}</b><span>{d.p}</span></p><p className="why">{d.w}</p></div>
+            </div>))}</div>
+        </div>
+      </section>
+      <section className="join">
+        <div className="tabs2" role="tablist">
+          <button role="tab" aria-selected={mode === "signup"} className={mode === "signup" ? "on" : ""} onClick={() => { setMode("signup"); setErr(""); }}>Créer un compte</button>
+          <button role="tab" aria-selected={mode === "login"} className={mode === "login" ? "on" : ""} onClick={() => { setMode("login"); setErr(""); }}>Se connecter</button>
+        </div>
+        {mode === "signup" && closed ? <p className="note">Les inscriptions sont fermées pour le moment.</p> :
+          <form className="form" onSubmit={go}>
+            {mode === "signup" && <label>Prénom<input value={f.name} onChange={set("name")} maxLength={80} autoComplete="given-name" /></label>}
+            <label>Adresse e-mail<input type="email" required value={f.email} onChange={set("email")} autoComplete="email" /></label>
+            <label>Mot de passe{mode === "signup" && " (8 caractères minimum)"}<input type="password" required minLength={mode === "signup" ? 8 : 1} value={f.password} onChange={set("password")} autoComplete={mode === "login" ? "current-password" : "new-password"} /></label>
+            {mode === "signup" && info?.signup === "invite" && <label>Code d'invitation<input required value={f.invite} onChange={set("invite")} /></label>}
+            {mode === "signup" && <label className="check"><input type="checkbox" checked={f.consent} onChange={set("consent")} />
+              <span>J'accepte que mon CV soit enregistré et analysé pour me proposer des offres. <a href="#" onClick={e => { e.preventDefault(); setShowPrivacy(!showPrivacy); }}>Voir le détail</a></span></label>}
+            <button className="btn big" disabled={busy}>{busy ? "Un instant…" : mode === "login" ? "Se connecter" : "Créer mon compte gratuit"}</button>
+            {err && <p className="err">{err}</p>}
+            {mode === "login" && <p className="mute">Mot de passe oublié ? Demande à la personne qui t'a donné l'adresse du site : elle peut t'en créer un nouveau.</p>}
+          </form>}
+        {mode === "signup" && !closed && <ul className="perks">
+          <li>Gratuit, sans publicité.</li>
+          {lim && info.shared_ai && <li>IA incluse : {lim.score} offres notées et {lim.assist} lettres ou analyses par jour.</li>}
+          <li>Sans limite avec ta propre clé Gemini, gratuite elle aussi.</li>
+        </ul>}
+      </section>
+    </main>
+    {showPrivacy && <div className="wrap"><Privacy info={info} /></div>}
+    <section className="steps wrap">
+      <h2>Comment ça marche</h2>
+      <ol>
+        <li><b>Tu importes ton CV.</b> Un PDF suffit. Si tu vises plusieurs domaines, tu peux en mettre jusqu'à trois.</li>
+        <li><b>On surveille pour toi.</b> Les nouvelles offres de stage en Île-de-France sont collectées toutes les trois minutes et notées de 0 à 100.</li>
+        <li><b>Tu reçois une alerte.</b> Dès qu'une offre dépasse ton seuil, elle arrive sur ton téléphone, avec le CV à envoyer.</li>
+        <li><b>Tu postules plus vite.</b> Lettre, message au recruteur et préparation d'entretien se rédigent à partir de l'offre et de ton CV.</li>
+      </ol>
+    </section>
   </div>);
 }
 
-function Feed({ me, onTrack, onAnalyse, status, refreshStatus, reloadKey, focusId }) {
+const STATES = [["new", "Nouvelles"], ["saved", "Gardées"], ["applied", "Postulées"], ["hidden", "Masquées"], ["all", "Toutes"]];
+const STATE_DONE = { saved: "Offre gardée", hidden: "Offre masquée", applied: "Candidature notée dans le suivi", new: "Offre remise dans les nouvelles" };
+
+function Feed({ me, onTrack, onAnalyse, status, refreshStatus, reloadKey, focusId, toast }) {
   const [list, setList] = useState(null);
   const [f, setF] = useState({ state: "new", min: 0, q: "", hours: 0 });
   const [sort, setSort] = useState("seen");
@@ -88,7 +132,15 @@ function Feed({ me, onTrack, onAnalyse, status, refreshStatus, reloadKey, focusI
       .then(l => { setList(l); setErr(""); }).catch(e => setErr(e.message));
   }, [f]);
   useEffect(() => { load(); const t = setInterval(() => { load(); refreshStatus(); }, 60000); return () => clearInterval(t); }, [load, reloadKey]);
-  const setState = async (o, state) => { await api(`/api/offers/${o.id}`, { method: "PATCH", body: JSON.stringify({ state }) }); load(); };
+  const patch = (id, state) => api(`/api/offers/${id}`, { method: "PATCH", body: JSON.stringify({ state }) });
+  // L'offre quitte la liste tout de suite ; le message propose d'annuler pendant quelques secondes.
+  const setState = async (o, state) => {
+    const before = o.state;
+    setList(l => l && (f.state === "all" ? l.map(x => x.id === o.id ? { ...x, state } : x) : l.filter(x => x.id !== o.id)));
+    try { await patch(o.id, state); toast(STATE_DONE[state], async () => { await patch(o.id, before); load(); refreshStatus(); }); }
+    catch (e) { setErr(e.message); load(); }
+    refreshStatus();
+  };
   const refresh = async () => {
     setBusy(true); setNote(""); setErr("");
     try {
@@ -101,48 +153,49 @@ function Feed({ me, onTrack, onAnalyse, status, refreshStatus, reloadKey, focusI
   };
   const analyse = async o => { const full = await api(`/api/offers/${o.id}`); onAnalyse(`${full.title}\n${full.company} · ${full.place}\n\n${full.description}`, full.cv || "", { id: o.id, title: o.title, company: o.company, url: o.url, state: o.state }); };
   const run = status?.last_run;
+  const sorted = list && [...list].sort((a, b) => sort === "score" ? best(b) - best(a)
+    : sort === "pub" ? (b.published || "0").localeCompare(a.published || "0") : b.first_seen - a.first_seen);
   return (<>
-    <div className="stats">
-      <div><b>{status?.last_24h ?? "…"}</b><span>nouvelles en 24 h</span></div>
-      <div><b>{status?.total ?? "…"}</b><span>offres pour toi</span></div>
-      <div><b>{run ? ago(run.at) : "jamais"}</b><span>dernière collecte</span></div>
+    <div className="summary">
+      <p><b>{status?.last_24h ?? "…"}</b> nouvelles depuis 24 h, <b>{status?.total ?? "…"}</b> offres pour toi. <span className="mute">Dernière collecte {run ? ago(run.at) : "jamais"}.</span></p>
       <button className="btn ghost" onClick={refresh} disabled={busy}>{busy ? "Mise à jour…" : "Actualiser"}</button>
     </div>
-    <div className="row">
-      <select value={f.state} onChange={e => setF({ ...f, state: e.target.value })}>
-        <option value="new">Nouvelles</option><option value="saved">Gardées</option><option value="applied">Postulées</option>
-        <option value="hidden">Masquées</option><option value="all">Toutes</option></select>
-      <select value={f.min} onChange={e => setF({ ...f, min: +e.target.value })}>
-        <option value={0}>Tous les scores</option><option value={55}>Score 55 et plus</option><option value={75}>Score 75 et plus</option></select>
-      <select value={f.hours} onChange={e => setF({ ...f, hours: +e.target.value })}>
+    <div className="seg" role="tablist" aria-label="Filtrer par état">
+      {STATES.map(([k, l]) => <button key={k} role="tab" aria-selected={f.state === k} className={f.state === k ? "on" : ""} onClick={() => setF({ ...f, state: k })}>{l}</button>)}
+    </div>
+    <div className="filters">
+      <input type="search" value={f.q} onChange={e => setF({ ...f, q: e.target.value })} placeholder="Chercher une entreprise…" />
+      <select aria-label="Score minimal" value={f.min} onChange={e => setF({ ...f, min: +e.target.value })}>
+        <option value={0}>Tous les scores</option><option value={55}>55 et plus</option><option value={75}>75 et plus</option></select>
+      <select aria-label="Période" value={f.hours} onChange={e => setF({ ...f, hours: +e.target.value })}>
         <option value={0}>Toutes dates</option><option value={2}>2 dernières heures</option><option value={24}>24 h</option><option value={72}>3 jours</option></select>
-      <select value={sort} onChange={e => setSort(e.target.value)}>
-        <option value="seen">Tri : détectées récemment</option><option value="pub">Tri : mises en ligne récemment</option><option value="score">Tri : meilleur score</option></select>
-      <input value={f.q} onChange={e => setF({ ...f, q: e.target.value })} placeholder="Filtrer (entreprise, techno…)" style={{ flex: 1, minWidth: 160 }} />
+      <select aria-label="Tri" value={sort} onChange={e => setSort(e.target.value)}>
+        <option value="seen">Les plus récentes</option><option value="pub">Mises en ligne récemment</option><option value="score">Meilleur score</option></select>
     </div>
     {note && <p className="note">{note}</p>}
     {err && <p className="err">{err}</p>}
-    {list && !list.length && <p className="mute">Aucune offre ici pour l'instant. La collecte tourne en continu ; tes mots-clés se règlent dans l'onglet Réglages.</p>}
-    {list && [...list].sort((a, b) => sort === "score" ? best(b) - best(a)
-      : sort === "pub" ? (b.published || "0").localeCompare(a.published || "0") : b.first_seen - a.first_seen).map(o => (
-      <div className={`card offer${focusId === o.id ? " focus" : ""}`} key={o.id} id={`offer-${o.id}`}>
-        <div className={`score ${tone(best(o))}`} title={o.ai_score == null ? "Score par mots-clés" : "Score de l'IA d'après ton CV"}>{best(o)}{o.ai_score == null && <small>mots-clés</small>}</div>
+    {!list && !err && <div className="sheet" aria-busy="true">{[0, 1, 2, 3].map(i => <div className="offer skeleton" key={i}><div className="sk sk-score" /><div className="body"><div className="sk sk-1" /><div className="sk sk-2" /><div className="sk sk-3" /></div></div>)}</div>}
+    {list && !list.length && <div className="empty"><b>Rien dans cette liste pour l'instant.</b><p className="mute">{f.state === "new" ? "La collecte tourne en continu : les nouvelles offres apparaîtront ici. Tes mots-clés se règlent dans l'onglet Réglages." : "Change de filtre ci-dessus pour voir tes autres offres."}</p></div>}
+    {sorted?.length > 0 && <div className="sheet">{sorted.map(o => (
+      <article className={`offer${focusId === o.id ? " focus" : ""}`} key={o.id} id={`offer-${o.id}`}>
+        <Score o={o} />
         <div className="body">
-          <strong>{o.title}</strong>
-          <div className="mute">{o.company || "Entreprise non précisée"} · {o.place || "lieu non précisé"} · {o.source}</div>
-          <div className="mute">{pubLabel(o.published)} · détectée {ago(o.first_seen)}</div>
+          <h2 className="otitle"><a href={o.url} target="_blank" rel="noopener noreferrer">{o.title}</a></h2>
+          <p className="ometa"><b>{o.company || "Entreprise non précisée"}</b><span>{o.place || "lieu non précisé"}</span><span>via {o.source}</span></p>
+          {o.ai_reason ? <p className="why">{o.ai_reason}</p> : o.excerpt && <p className="excerpt">{o.excerpt.slice(0, 200)}…</p>}
           {me.cv > 1 && o.cv && <span className="tag">CV à envoyer : {me.cv_labels?.[o.cv] || o.cv}</span>}
           {o.dup_note && <p className="warn">{o.dup_note}</p>}
-          {o.ai_reason ? <p className="why">{o.ai_reason}</p> : o.excerpt && <p className="mute">{o.excerpt.slice(0, 220)}…</p>}
-          <div className="row">
+          <p className="odate">{pubLabel(o.published)}, détectée {ago(o.first_seen)}</p>
+          <div className="actions">
             <a className="btn" href={o.url} target="_blank" rel="noopener noreferrer">Voir l'offre</a>
             <button className="btn ghost" onClick={() => analyse(o)}>Lettre et analyse</button>
-            <button className="btn ghost" onClick={async () => { await onTrack({ company: o.company, job: o.title, url: o.url, status: 1 }); setState(o, "applied"); }}>J'ai postulé</button>
-            {o.state !== "saved" && <button className="btn ghost" onClick={() => setState(o, "saved")}>Garder</button>}
-            {o.state !== "hidden" && <button className="btn ghost" onClick={() => setState(o, "hidden")}>Masquer</button>}
+            {o.state !== "applied" && <button className="btn ghost" onClick={async () => { await onTrack({ company: o.company, job: o.title, url: o.url, status: 1 }); setState(o, "applied"); }}>J'ai postulé</button>}
+            {o.state !== "saved" && o.state !== "applied" && <button className="btn ghost" onClick={() => setState(o, "saved")}>Garder</button>}
+            {o.state !== "hidden" ? <button className="btn quiet" onClick={() => setState(o, "hidden")}>Masquer</button>
+              : <button className="btn quiet" onClick={() => setState(o, "new")}>Remettre</button>}
           </div>
         </div>
-      </div>))}
+      </article>))}</div>}
   </>);
 }
 
@@ -156,7 +209,7 @@ function Tracker({ apps, reload }) {
   const sent = apps.filter(a => a.status >= 1).length;
   const late = a => (a.status === 1 || a.status === 2) && (Date.now() / 1000 - a.updated) / 86400 >= 7;
   return (<>
-    <div className="card"><strong>{sent}</strong> candidature(s) envoyée(s) · <strong>{apps.filter(late).length}</strong> à relancer</div>
+    <div className="summary"><p><b>{sent}</b> candidature(s) envoyée(s), <b>{apps.filter(late).length}</b> à relancer.</p></div>
     <div className="row">
       {["company", "job", "url"].map(k => <input key={k} value={f[k]} placeholder={{ company: "Entreprise", job: "Poste", url: "Lien" }[k]} onChange={e => setF({ ...f, [k]: e.target.value })} />)}
       <button className="btn" onClick={add}>Ajouter (postulé)</button>
@@ -272,6 +325,9 @@ export default function App() {
   const [tab, setTabRaw] = useState(hashTab);
   const [ctx, setCtx] = useState(null);          // offre ouverte dans l'assistant
   const [feedKey, setFeedKey] = useState(0);     // augmente pour recharger la liste des offres
+  const [toastMsg, setToastMsg] = useState(null);
+  const toastTimer = useRef(0);
+  const showToast = useCallback((text, undo) => { clearTimeout(toastTimer.current); setToastMsg({ text, undo }); toastTimer.current = setTimeout(() => setToastMsg(null), 6000); }, []);
   const tabRef = useRef(tab);
   const feedScroll = useRef(0);                  // position de lecture dans la liste des offres
   const setTab = t => { if (t !== tabRef.current) window.location.hash = t; };
@@ -305,7 +361,7 @@ export default function App() {
     api("/api/me").then(start).catch(() => setMeRaw(null));
   }, []);
   useEffect(() => { if (info?.name) document.title = info.name; }, [info]);
-  if (me === undefined) return <div className="wrap"><p className="mute">Chargement… (jusqu'à une minute si le serveur dormait)</p></div>;
+  if (me === undefined) return <div className="loading"><div><div className="brand" style={{ justifyContent: "center", fontSize: "1.4rem" }}><Mark />{info?.name || "Veille Stages"}</div><p className="mute">Chargement… (jusqu'à une minute si le serveur dormait)</p></div></div>;
   if (!me) return <Auth info={info} onOk={start} />;
   const track = async a => { await post("/api/applications", a); reload(); };
   const toAI = (t, k = "", o = null) => { setOffer(t); setCv(k); setCtx(o); setTab("ai"); };
@@ -320,24 +376,29 @@ export default function App() {
   const todo = [!me.cv && ["importer ton CV", "profile"], !hasAlerts && ["brancher tes alertes", "settings"]].filter(Boolean);
   const tabs = [["feed", "Offres"], ["track", `Suivi (${apps.length})`], ["ai", "Assistant"], ["profile", "Profil"], ["settings", "Réglages"]];
   if (me.is_admin) tabs.push(["admin", "Administration"]);
-  return (<div className="wrap">
-    <header>
-      <h1>{info?.name || "Veille Stages"}</h1>
-      <div className="who"><span className="mute">{me.name || me.email}</span>
-        <button className="btn ghost" onClick={() => { setToken(null); setMeRaw(null); }}>Se déconnecter</button></div>
-    </header>
-    {todo.length > 0 && <p className="note">Pour finir l'installation, il reste à {todo.map(([l, t], i) => <span key={t}>{i > 0 && " et à "}<a href="#" onClick={e => { e.preventDefault(); setTab(t); }}>{l}</a></span>)}.</p>}
-    <nav>{tabs.map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}</nav>
-    <div hidden={tab !== "feed"}><Feed me={me} onTrack={track} onAnalyse={toAI} status={status} refreshStatus={refreshStatus} reloadKey={feedKey} focusId={ctx?.id} /></div>
-    {tab === "track" && <Tracker apps={apps} reload={reload} />}
-    {tab === "ai" && <Assistant me={me} setMe={setMe} offer={offer} setOffer={setOffer} cv={cv} setCv={setCv} goSettings={goSettings} ctx={ctx} onBack={() => setTab("feed")} onState={setCtxState} />}
-    {tab === "profile" && <Profile me={me} reloadMe={reloadMe} goSettings={goSettings} />}
-    {tab === "settings" && <Settings me={me} setMe={m => setMeRaw(m)} reloadMe={reloadMe} onGone={() => { setToken(null); setMeRaw(null); }} />}
-    {tab === "admin" && me.is_admin && <Admin me={me} />}
-    {tab === "privacy" && <Privacy info={info} />}
-    <footer className="mute">
-      <a href="#" onClick={e => { e.preventDefault(); setTab("privacy"); }}>Confidentialité et données</a>
-      {info?.donate && /^https:\/\//.test(info.donate) && <> · <a href={info.donate} target="_blank" rel="noopener noreferrer">Soutenir le site</a></>}
-    </footer>
+  const out = () => { setToken(null); setMeRaw(null); };
+  return (<div className="app">
+    <div className="topbar">
+      <div className="brand"><Mark />{info?.name || "Veille Stages"}</div>
+      <nav className="tabs" aria-label="Sections">{tabs.map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} aria-current={tab === k ? "page" : undefined} onClick={() => setTab(k)}>{l}</button>)}</nav>
+      <div className="who"><span className="mute">{me.name || me.email}</span><button className="btn quiet" onClick={out}>Se déconnecter</button></div>
+    </div>
+    <div className="wrap">
+      {todo.length > 0 && <p className="note">Pour finir l'installation, il reste à {todo.map(([l, t], i) => <span key={t}>{i > 0 && " et à "}<a href="#" onClick={e => { e.preventDefault(); setTab(t); }}>{l}</a></span>)}.</p>}
+      <div hidden={tab !== "feed"}><Feed me={me} onTrack={track} onAnalyse={toAI} status={status} refreshStatus={refreshStatus} reloadKey={feedKey} focusId={ctx?.id} toast={showToast} /></div>
+      {tab === "track" && <Tracker apps={apps} reload={reload} />}
+      {tab === "ai" && <Assistant me={me} setMe={setMe} offer={offer} setOffer={setOffer} cv={cv} setCv={setCv} goSettings={goSettings} ctx={ctx} onBack={() => setTab("feed")} onState={setCtxState} />}
+      {tab === "profile" && <Profile me={me} reloadMe={reloadMe} goSettings={goSettings} />}
+      {tab === "settings" && <Settings me={me} setMe={m => setMeRaw(m)} reloadMe={reloadMe} onGone={out} />}
+      {tab === "admin" && me.is_admin && <Admin me={me} />}
+      {tab === "privacy" && <Privacy info={info} />}
+      <footer className="mute">
+        <a href="#" onClick={e => { e.preventDefault(); setTab("privacy"); }}>Confidentialité et données</a>
+        {info?.donate && /^https:\/\//.test(info.donate) && <a href={info.donate} target="_blank" rel="noopener noreferrer">Soutenir le site</a>}
+      </footer>
+    </div>
+    <nav className="bottombar" aria-label="Sections">{[["feed", "Offres"], ["track", "Suivi"], ["ai", "Assistant"], ["profile", "Profil"], ["settings", "Réglages"]].map(([k, l]) =>
+      <button key={k} className={tab === k ? "on" : ""} aria-current={tab === k ? "page" : undefined} onClick={() => setTab(k)}><Icon name={k} /><span>{l}</span></button>)}</nav>
+    {toastMsg && <div className="toast" role="status"><span>{toastMsg.text}</span>{toastMsg.undo && <button onClick={async () => { const u = toastMsg.undo; setToastMsg(null); await u(); }}>Annuler</button>}</div>}
   </div>);
 }
