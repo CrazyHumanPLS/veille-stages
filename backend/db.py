@@ -67,6 +67,7 @@ users = Table(
     Column("last_eval", Float, default=0),
     Column("ai_error", String(300), default=""),
     Column("alert_error", String(300), default=""),
+    Column("plan_until", Float, default=0),             # Premium jusqu'à cette date (0 = formule gratuite)
 )
 
 offers = Table(
@@ -121,7 +122,7 @@ meta.create_all(engine)
 
 # Colonnes ajoutées après la première mise en ligne : create_all ne modifie pas une table existante.
 # Pour ajouter une colonne plus tard, l'inscrire ici : ("table", "colonne", "TYPE SQL DEFAULT …").
-for _table, _col, _type in ():
+for _table, _col, _type in (("users", "plan_until", "FLOAT DEFAULT 0"),):
     try:
         with engine.begin() as _c:
             _c.exec_driver_sql(f"ALTER TABLE {_table} ADD COLUMN {_col} {_type}")

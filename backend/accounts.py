@@ -46,7 +46,7 @@ def create(email: str, name: str, password: str, is_admin: bool = False) -> dict
                 email=clean_email(email), name=name.strip()[:80], pw_hash=security.hash_password(password),
                 created=now, last_seen=now, is_admin=int(is_admin), disabled=0, token_version=0,
                 secrets="", settings="{}", profile="{}", cursor=0, bootstrapped=0, last_eval=0,
-                ai_error="", alert_error=""))
+                ai_error="", alert_error="", plan_until=0))
             uid = r.inserted_primary_key[0]
     except IntegrityError:
         return None
@@ -104,6 +104,10 @@ def remove(uid: int) -> None:
         c.execute(delete(db.applications).where(db.applications.c.user_id == uid))
         c.execute(delete(db.usage).where(db.usage.c.user_id == uid))
         c.execute(delete(db.users).where(db.users.c.id == uid))
+
+
+def is_premium(u: dict) -> bool:
+    return (u.get("plan_until") or 0) > time.time()
 
 
 def own_key(u: dict) -> str:

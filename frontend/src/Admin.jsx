@@ -21,12 +21,16 @@ export default function Admin({ me }) {
   return (<>
     {msg && <p className="note">{msg}</p>}
     <div className="stats">
-      <div><b>{ov.users.length}</b><span>inscrits ({active} actifs)</span></div>
+      <div><b>{ov.stats.total}</b><span>inscrits ({active} avec veille active)</span></div>
+      <div><b>{ov.stats.active_7d}</b><span>venus sur le site en 7 jours</span></div>
+      <div><b>{ov.stats.new_7d}</b><span>nouveaux en 7 jours</span></div>
       <div><b>{ov.shared.used} / {ov.shared.limit}</b><span>appels à la clé commune aujourd'hui</span></div>
       <div><b>{ov.pool}</b><span>offres dans le stock commun</span></div>
       <div><b>{ov.last_run ? ago(ov.last_run.at) : "jamais"}</b><span>dernière collecte</span></div>
       <button className="btn ghost" disabled={busy} onClick={() => act("Collecte en cours…", async () => { const r = await post("/api/admin/collect"); load(); return r.skipped ? "Une collecte était déjà en cours." : `Collecte faite : ${r.new} nouvelle(s) offre(s), ${r.scored} notée(s), ${r.alerts} alerte(s), ${r.users} compte(s) traité(s).`; })}>Collecter maintenant</button>
     </div>
+
+    <p className="mute">Sur {ov.stats.total} inscrits : {ov.stats.with_cv} ont importé un CV, {ov.stats.with_alerts} ont branché une alerte, {ov.stats.own_key} utilisent leur propre clé, {ov.stats.premium} sont en Premium, {ov.stats.active_30d} sont venus dans les 30 derniers jours.</p>
 
     <h3>Inscrits</h3>
     {temp && <p className="note">Mot de passe provisoire de {temp.email} : <code>{temp.password}</code><br />Transmets-le-lui ; il le changera dans Réglages. Il ne sera plus affiché.</p>}
@@ -34,16 +38,18 @@ export default function Admin({ me }) {
       <thead><tr><th>Compte</th><th>Dernière visite</th><th>CV</th><th>Alertes</th><th>IA aujourd'hui</th><th></th></tr></thead>
       <tbody>{ov.users.map(u => (
         <tr key={u.id}>
-          <td><Dot ok={!u.disabled && !u.paused} /> {u.name || "(sans prénom)"}{u.is_admin && " · admin"}<div className="mute">{u.email}</div>
+          <td><Dot ok={!u.disabled && !u.paused} /> {u.name || "(sans prénom)"}{u.is_admin && <span className="tag">admin</span>}{u.premium && <span className="tag gold">Premium jusqu'au {new Date(u.premium_until * 1000).toLocaleDateString("fr-FR")}</span>}<div className="mute">{u.email}</div>
             {u.disabled && <div className="err">désactivé</div>}{!u.disabled && u.paused && <div className="mute">veille en pause (inactif)</div>}
             {u.ai_error && <div className="err small">IA : {u.ai_error}</div>}{u.alert_error && <div className="err small">Alertes : {u.alert_error}</div>}</td>
           <td>{ago(u.last_seen)}</td><td>{u.cv}</td><td>{u.channels.join(", ") || "aucune"}</td>
           <td>{u.own_key ? "sa clé" : "clé commune"}<div className="mute">{u.usage.score || 0} notes · {u.usage.assist || 0} générations</div></td>
-          <td>{u.id !== me.id && <div className="row" style={{ margin: 0 }}>
-            <button className="btn ghost" disabled={busy} onClick={() => user(u, "…", async () => { const r = await post(`/api/admin/users/${u.id}/reset`); setTemp({ email: u.email, password: r.password }); return "Mot de passe provisoire créé."; })}>Nouveau mot de passe</button>
+          <td><div className="row" style={{ margin: 0 }}>
+            <button className="btn ghost" disabled={busy} onClick={() => user(u, "…", async () => { await api(`/api/admin/users/${u.id}`, { method: "PATCH", body: JSON.stringify({ premium_days: 30 }) }); return `30 jours de Premium ajoutés à ${u.email}.`; })}>+30 j Premium</button>
+            {u.premium && <button className="btn ghost" disabled={busy} onClick={() => user(u, "…", async () => { await api(`/api/admin/users/${u.id}`, { method: "PATCH", body: JSON.stringify({ premium_days: 0 }) }); return "Premium retiré."; })}>Retirer Premium</button>}
+            {u.id !== me.id && <><button className="btn ghost" disabled={busy} onClick={() => user(u, "…", async () => { const r = await post(`/api/admin/users/${u.id}/reset`); setTemp({ email: u.email, password: r.password }); return "Mot de passe provisoire créé."; })}>Nouveau mot de passe</button>
             <button className="btn ghost" disabled={busy} onClick={() => user(u, "…", async () => { await api(`/api/admin/users/${u.id}`, { method: "PATCH", body: JSON.stringify({ disabled: !u.disabled }) }); return u.disabled ? "Compte réactivé." : "Compte désactivé."; })}>{u.disabled ? "Réactiver" : "Désactiver"}</button>
-            <button className="btn ghost" disabled={busy} onClick={() => window.confirm(`Supprimer définitivement le compte ${u.email} et toutes ses données ?`) && user(u, "…", async () => { await api(`/api/admin/users/${u.id}`, { method: "DELETE" }); return "Compte supprimé."; })}>Supprimer</button>
-          </div>}</td>
+            <button className="btn ghost" disabled={busy} onClick={() => window.confirm(`Supprimer définitivement le compte ${u.email} et toutes ses données ?`) && user(u, "…", async () => { await api(`/api/admin/users/${u.id}`, { method: "DELETE" }); return "Compte supprimé."; })}>Supprimer</button></>}
+          </div></td>
         </tr>))}</tbody>
     </table></div>
 
@@ -62,6 +68,13 @@ export default function Admin({ me }) {
         <label>Analyses de CV <input {...lim("cv")} /></label>
         <label>Plafond global d'appels à la clé commune <input {...lim("shared_requests")} style={{ width: 90 }} /></label>
       </div>
+      <p className="mute">Les mêmes limites pour les comptes Premium :</p>
+      <div className="row">
+        <label>Offres notées <input {...lim("p_score")} /></label>
+        <label>Générations de l'assistant <input {...lim("p_assist")} /></label>
+        <label>Analyses de CV <input {...lim("p_cv")} /></label>
+      </div>
+      <p className="mute">Pour vendre le Premium : mets ton lien de paiement dans la variable PREMIUM_URL et le prix affiché dans PREMIUM_PRICE (Render, onglet Environment). Quand quelqu'un a payé, clique « +30 j Premium » sur sa ligne.</p>
       <button className="btn" disabled={busy} onClick={() => save({ limits: set.limits, site: set.site })}>Enregistrer</button>
     </div>
 

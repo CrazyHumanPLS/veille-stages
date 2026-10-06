@@ -58,6 +58,22 @@ function Alerts({ me, setMe }) {
   </>);
 }
 
+function Premium({ me, info }) {
+  const ai = me.ai, pr = info?.premium, pl = info?.premium_limits;
+  if (!ai.premium && !/^https:\/\//.test(pr?.url || "")) return null;   // rien à vendre : on n'affiche rien
+  const until = ai.premium && new Date(ai.premium_until * 1000).toLocaleDateString("fr-FR");
+  return (<div className={`card premium${ai.premium ? " active" : ""}`}>
+    <strong>{ai.premium ? `Tu es en Premium jusqu'au ${until}` : `Premium${pr.price ? `, ${pr.price}` : ""}`}</strong>
+    {pl && <ul>
+      <li>{pl.score} offres notées par l'IA chaque jour, au lieu de {info.limits.score}.</li>
+      <li>{pl.assist} lettres, analyses et messages par jour, au lieu de {info.limits.assist}.</li>
+      <li>Aucune clé à créer : tout fonctionne dès l'activation.</li>
+    </ul>}
+    {!ai.premium && <><a className="btn" href={pr.url} target="_blank" rel="noopener noreferrer">Passer en Premium</a>
+      <p className="mute">Lors du paiement, indique l'adresse {me.email}. Ton compte est activé à la main, en général dans la journée.</p></>}
+  </div>);
+}
+
 function AiKey({ me, setMe }) {
   const ai = me.ai;
   const [key, setKey] = useState("");
@@ -71,6 +87,7 @@ function AiKey({ me, setMe }) {
       <strong>Ta consommation aujourd'hui</strong>
       <table><tbody>{Object.entries(ai.kinds).map(([k, v]) => <tr key={k}><td>{names[k]}</td><td>{v.used}{v.limit == null ? " (sans limite)" : ` sur ${v.limit}`}</td></tr>)}</tbody></table>
       <p className="mute">{ai.own_key ? "Tu utilises ta propre clé : pas de limite côté site, seulement celle de Google (très large pour un usage personnel)."
+        : ai.premium ? "Tu es en Premium : tes limites sont relevées, sans clé à créer."
         : ai.shared_available ? "Tu utilises la clé commune du site, partagée entre tous les inscrits : d'où ces limites, remises à zéro chaque nuit à minuit. Au-delà, les offres gardent un score par mots-clés."
           : "Ce site n'a pas de clé commune : ajoute la tienne pour activer l'IA."}</p>
     </div>
@@ -161,10 +178,11 @@ function Account({ me, setMe, onGone }) {
   </>);
 }
 
-export default function Settings({ me, setMe, reloadMe, onGone }) {
+export default function Settings({ me, setMe, reloadMe, onGone, info }) {
   return (<>
     <Alerts me={me} setMe={setMe} />
     <AiKey me={me} setMe={setMe} />
+    <Premium me={me} info={info} />
     <Search reloadMe={reloadMe} />
     <Account me={me} setMe={setMe} onGone={onGone} />
   </>);

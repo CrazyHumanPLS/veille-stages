@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 os.environ.update(DATABASE_URL="sqlite:///" + tempfile.mkdtemp() + "/t.db", COLLECT_EVERY_SEC="0",
                   FT_CLIENT_ID="x", FT_CLIENT_SECRET="x", GEMINI_API_KEY="cle-commune", TELEGRAM_TOKEN="bot",
                   SECRET_KEY="secret-de-test", CRON_KEY="k", ADZUNA_APP_ID="", ADZUNA_APP_KEY="",
-                  ADMIN_EMAIL="chef@ex.fr", SIGNUP_MODE="open", APP_URL="https://site.test")
+                  AI_BACKOFF_SEC="0", ADMIN_EMAIL="chef@ex.fr", SIGNUP_MODE="open", APP_URL="https://site.test")
 
 import accounts, collector, db, quota, scoring, security  # noqa: E402
 
@@ -451,4 +451,80 @@ def test_guards(monkeypatch):
            "url": "javascript:alert(1)", "description": "BGP Cisco", "published": "", "geo_ok": False}
     assert collector.keep(raw, scoring.criteria()) is None
     assert collector.keep({**raw, "url": "https://ex.fr/1"}, scoring.criteria()) is not None
+    main._hits.clear()
+
+
+def test_ai_retries(monkeypatch):
+    """Appels à l'IA : nouveaux essais sur erreur passagère, modèle de secours, arrêt net sur erreur définitive."""
+    import ai
+    calls, script = [], []
+
+    def fake(req: httpx.Request) -> httpx.Response:
+        model = str(req.url).split("/models/")[1].split(":")[0]
+        calls.append(model)
+        step = script.pop(0) if script else 200
+        if step == "coupure":
+            raise httpx.ConnectError("coupé")
+        if step == 200:
+            return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "ok " + model}]}}]})
+        return httpx.Response(step, text="API key not valid" if step == 403 else "surcharge", headers={"retry-after": "0"})
+
+    real = httpx._client.AsyncClient   # la vraie classe (la version simulée par défaut est remplacée ici)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(fake), **kw))
+    monkeypatch.setitem(ai._working, "model", None)
+    monkeypatch.setenv("GEMINI_MODEL", "modele-a")
+    monkeypatch.setattr(ai, "FALLBACK_MODELS", ["modele-b"])
+    # 1) deux erreurs passagères puis succès : même modèle, 3 appels
+    script[:] = [503, "coupure", 200]
+    assert run(ai.generate("x", "k")) == "ok modele-a" and calls == ["modele-a"] * 3
+    # 2) le premier modèle reste saturé : 3 essais, puis le modèle de secours répond
+    calls.clear(); script[:] = [429, 429, 429, 200]; ai._working["model"] = None
+    assert run(ai.generate("x", "k")) == "ok modele-b" and calls == ["modele-a"] * 3 + ["modele-b"]
+    # 3) clé refusée : un seul appel, aucun nouvel essai
+    calls.clear(); script[:] = [403]; ai._working["model"] = None
+    with pytest.raises(ai.AIError, match="refusée"):
+        run(ai.generate("x", "k"))
+    assert calls == ["modele-a"]
+    # 4) tout est en panne : on s'arrête après 3 essais par modèle, avec un message clair
+    calls.clear(); script[:] = [503] * 6; ai._working["model"] = None
+    with pytest.raises(ai.AIError, match="surchargé"):
+        run(ai.generate("x", "k"))
+    assert calls == ["modele-a"] * 3 + ["modele-b"] * 3
+    # 5) durée totale plafonnée : avec un budget nul, aucun appel n'est fait
+    calls.clear(); ai._working["model"] = None
+    with pytest.raises(ai.AIError, match="trop de temps"):
+        run(ai.generate("x", "k", budget=0))
+    assert calls == []
+
+
+def test_premium():
+    """Formule Premium : limites plus hautes, activée et retirée par l'administrateur, prolongeable."""
+    import time as _t
+    from fastapi.testclient import TestClient
+    import main
+    main._hits.clear()
+    with TestClient(main.app) as c:
+        boss = accounts.by_email("chef@ex.fr") or accounts.create("chef@ex.fr", "Chef", "motdepasse1", True)
+        accounts.set_fields(boss["id"], is_admin=1)
+        h = {"Authorization": "Bearer " + security.make_token(boss["id"], accounts.by_id(boss["id"])["token_version"])}
+        tok = c.post("/api/signup", json={"email": "client@ex.fr", "password": "motdepasse1", "consent": True}).json()
+        hu, uid = {"Authorization": "Bearer " + tok["token"]}, tok["me"]["id"]
+        lim = quota.limits()
+        assert tok["me"]["ai"]["premium"] is False and tok["me"]["ai"]["kinds"]["assist"]["limit"] == lim["assist"]
+        assert c.patch(f"/api/admin/users/{uid}", json={"premium_days": 30}, headers=hu).status_code == 403   # réservé à l'admin
+        assert c.patch(f"/api/admin/users/{uid}", json={"premium_days": 30}, headers=h).json()["ok"]
+        me = c.get("/api/me", headers=hu).json()
+        assert me["ai"]["premium"] and me["ai"]["kinds"]["assist"]["limit"] == lim["p_assist"] > lim["assist"]
+        until = me["ai"]["premium_until"]
+        assert 29.9 * 86400 < until - _t.time() < 30.1 * 86400
+        c.patch(f"/api/admin/users/{uid}", json={"premium_days": 30}, headers=h)                                # prolonge
+        assert abs(c.get("/api/me", headers=hu).json()["ai"]["premium_until"] - until - 30 * 86400) < 5
+        ov = c.get("/api/admin/overview", headers=h).json()
+        assert ov["stats"]["premium"] == 1 and ov["stats"]["total"] == len(ov["users"]) and ov["stats"]["new_7d"] >= 1
+        c.patch(f"/api/admin/users/{uid}", json={"premium_days": 0}, headers=h)                                 # retour au gratuit
+        me = c.get("/api/me", headers=hu).json()
+        assert not me["ai"]["premium"] and me["ai"]["kinds"]["assist"]["limit"] == lim["assist"]
+        assert c.patch(f"/api/admin/users/{boss['id']}", json={"disabled": True}, headers=h).status_code == 400  # pas sur soi-même
+        pub = c.get("/api/public").json()
+        assert pub["premium_limits"]["score"] == lim["p_score"] and "url" in pub["premium"]
     main._hits.clear()

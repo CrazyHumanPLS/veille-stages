@@ -1,8 +1,11 @@
 """Appels Gemini : texte libre, analyse du CV, score des offres.
 La clé est toujours passée par l'appelant : celle de l'utilisateur, ou la clé commune du site (voir quota.py)."""
+import asyncio
 import json
 import os
+import random
 import re
+import time
 
 import httpx
 
@@ -25,33 +28,68 @@ def _models() -> list[str]:
     return out
 
 
-async def generate(prompt: str, key: str, as_json: bool = False, timeout: float = 90) -> str:
+RETRYABLE = {429, 500, 502, 503, 504, 529}   # passager : on réessaie. 400, 401, 403 : inutile d'insister
+TRIES_PER_MODEL = 3
+BACKOFF = float(os.getenv("AI_BACKOFF_SEC", "1"))   # attente de base entre deux essais (doublée à chaque fois)
+MAX_WAIT = 8.0                                      # on n'attend jamais plus longtemps entre deux essais
+_sleep = asyncio.sleep
+
+
+def _pause(attempt: int, retry_after: str | None) -> float:
+    """Attente avant le prochain essai : celle demandée par Google si elle est raisonnable, sinon une attente
+    qui double à chaque fois, avec une part de hasard pour que tous les comptes ne réessaient pas ensemble."""
+    try:
+        asked = float(retry_after) if retry_after else 0.0
+    except ValueError:
+        asked = 0.0
+    wait = asked if 0 < asked <= MAX_WAIT else BACKOFF * (2 ** attempt)
+    return min(MAX_WAIT, wait) * (0.6 + 0.8 * random.random())
+
+
+async def generate(prompt: str, key: str, as_json: bool = False, timeout: float = 45, budget: float = 100) -> str:
+    """Demande un texte à Gemini. timeout : durée maximale d'un appel ; budget : durée maximale de l'ensemble.
+    Erreur passagère (surcharge, trop de demandes, coupure) : nouveaux essais espacés, puis modèle suivant.
+    Erreur définitive (clé refusée, demande invalide) : arrêt immédiat."""
     if not key:
         raise AIError("clé Gemini manquante")
     body = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}
     if as_json:
         body["generationConfig"]["responseMimeType"] = "application/json"
-    last = "aucun modèle disponible"
+    last, deadline = "aucun modèle disponible", time.monotonic() + budget
     async with httpx.AsyncClient(timeout=timeout) as h:
         for model in _models():
-            r = await h.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                             headers={"x-goog-api-key": key}, json=body)
-            if r.status_code in (400, 401, 403) and "api key" in r.text.lower().replace("_", " "):
-                raise AIError("clé Gemini refusée par Google (clé invalide, supprimée ou restreinte)")
-            if r.status_code in (400, 404) and "model" in r.text.lower():
-                last = f"modèle {model} indisponible"
-                continue  # modèle retiré : on essaie le suivant
-            if r.status_code == 429:
-                raise AIError("quota Gemini atteint pour cette clé (trop de demandes), réessaie plus tard")
-            if r.status_code != 200:
-                raise AIError(f"Gemini {r.status_code} : {r.text[:200]}")
-            try:
-                text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-            except (KeyError, IndexError, TypeError):
-                raise AIError("réponse Gemini vide ou bloquée")
-            _working["model"] = model
-            return text
-    raise AIError(last)
+            for attempt in range(TRIES_PER_MODEL):
+                if time.monotonic() >= deadline:
+                    raise AIError(f"l'IA met trop de temps à répondre ({last}), réessaie plus tard")
+                retry_after = None
+                try:
+                    r = await h.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                                     headers={"x-goog-api-key": key}, json=body)
+                except httpx.HTTPError as e:      # coupure réseau ou délai dépassé
+                    last = f"connexion à Gemini impossible ({type(e).__name__})"
+                else:
+                    if r.status_code in (400, 401, 403) and "api key" in r.text.lower().replace("_", " "):
+                        raise AIError("clé Gemini refusée par Google (clé invalide, supprimée ou restreinte)")
+                    if r.status_code in (400, 404) and "model" in r.text.lower():
+                        last = f"modèle {model} indisponible"
+                        break                      # modèle retiré : on passe au suivant sans insister
+                    if r.status_code == 200:
+                        try:
+                            text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                        except (KeyError, IndexError, TypeError, ValueError):
+                            raise AIError("réponse Gemini vide ou bloquée")
+                        if model != _working["model"]:
+                            print(f"IA : réponse du modèle {model}" + (f" (après : {last})" if attempt or last != "aucun modèle disponible" else ""))
+                        _working["model"] = model
+                        return text
+                    if r.status_code not in RETRYABLE:
+                        raise AIError(f"Gemini {r.status_code} : {r.text[:200]}")
+                    last = ("quota Gemini atteint pour cette clé (trop de demandes)" if r.status_code == 429
+                            else f"Gemini surchargé ({r.status_code})")
+                    retry_after = r.headers.get("retry-after")
+                if attempt < TRIES_PER_MODEL - 1:
+                    await _sleep(min(_pause(attempt, retry_after), max(0.0, deadline - time.monotonic())))
+    raise AIError(f"{last}, réessaie plus tard")
 
 
 def _loads(text: str):
@@ -116,7 +154,7 @@ async def score_offers(profile: str, batch: list[dict], goal: str, slots: list[s
         'Renvoie uniquement un tableau JSON : '
         '[{"id": "...", "score": 0, "cv": "clé", "raison": "une phrase courte et concrète"}]\n\n'
         f"SES CV :\n{profile[:12000]}\n\nOFFRES :\n" + "\n\n".join(lines))
-    data = _loads(await generate(prompt, key, as_json=True))
+    data = _loads(await generate(prompt, key, as_json=True, budget=45))   # tâche de fond : on n'insiste pas longtemps
     if isinstance(data, dict):
         data = data.get("offres") or data.get("results") or list(data.values())[0]
     out = {}

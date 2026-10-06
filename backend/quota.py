@@ -17,6 +17,9 @@ DEFAULT_LIMITS = {
     "assist": 5,            # lettres, analyses, messages… par jour et par personne
     "score": 40,            # offres notées d'après le CV, par jour et par personne
     "cv": 6,                # analyses de CV par jour et par personne
+    "p_assist": 40,         # les mêmes limites pour un compte Premium
+    "p_score": 200,
+    "p_cv": 20,
     "shared_requests": 800,  # appels par jour sur la clé commune, tous utilisateurs confondus
     "max_users": 300,       # au-delà, les inscriptions se ferment toutes seules
 }
@@ -44,6 +47,11 @@ def limits() -> dict:
     return out
 
 
+def limit_for(u: dict, kind: str, lim: dict | None = None) -> int:
+    lim = lim or limits()
+    return lim["p_" + kind] if accounts.is_premium(u) else lim[kind]
+
+
 def shared_key() -> str:
     return os.getenv("GEMINI_API_KEY", "").strip()
 
@@ -65,10 +73,10 @@ def grant(u: dict, kind: str, units: int = 1) -> tuple[str, bool, int]:
     if not key:
         raise QuotaError("L'IA n'est pas disponible sur ce site pour l'instant. Ajoute ta propre clé Gemini "
                          "gratuite dans l'onglet Réglages.")
-    lim = limits()
-    left = lim[kind] - db.usage_get(u["id"], today()).get(kind, 0)
+    mine = limit_for(u, kind)
+    left = mine - db.usage_get(u["id"], today()).get(kind, 0)
     if left <= 0:
-        raise QuotaError(f"Limite du jour atteinte ({lim[kind]} {LABELS[kind]}). Elle repart à zéro à minuit. "
+        raise QuotaError(f"Limite du jour atteinte ({mine} {LABELS[kind]}). Elle repart à zéro à minuit. "
                          "Pour ne plus avoir de limite, ajoute ta propre clé Gemini gratuite dans l'onglet Réglages.")
     if shared_left() <= 0:
         raise QuotaError("Le quota commun du site est épuisé pour aujourd'hui. Il repart à zéro à minuit. "
@@ -86,5 +94,6 @@ def view(u: dict) -> dict:
     """Ce que le site affiche : consommation du jour et limites."""
     lim, used = limits(), db.usage_get(u["id"], today())
     own = bool(accounts.own_key(u))
-    return {"own_key": own, "shared_available": bool(shared_key()),
-            "kinds": {k: {"used": used.get(k, 0), "limit": None if own else lim[k]} for k in LABELS}}
+    return {"own_key": own, "shared_available": bool(shared_key()), "premium": accounts.is_premium(u),
+            "premium_until": u.get("plan_until") or 0,
+            "kinds": {k: {"used": used.get(k, 0), "limit": None if own else limit_for(u, k, lim)} for k in LABELS}}

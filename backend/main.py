@@ -139,7 +139,10 @@ def public():
     s, lim = site_settings(), quota.limits()
     full = accounts.count() >= lim["max_users"]
     return {"name": APP_NAME, "signup": "closed" if full else s["signup"], "donate": os.getenv("DONATE_URL", ""),
-            "contact": os.getenv("CONTACT_EMAIL", ""), "limits": {k: lim[k] for k in quota.LABELS},
+            "contact": os.getenv("CONTACT_EMAIL", ""), "owner": os.getenv("LEGAL_NAME", ""),
+            "limits": {k: lim[k] for k in quota.LABELS}, "premium_limits": {k: lim["p_" + k] for k in quota.LABELS},
+            # Premium : simple lien de paiement (Stripe, PayPal, Lydia…) ; l'administrateur active ensuite le compte.
+            "premium": {"url": os.getenv("PREMIUM_URL", ""), "price": os.getenv("PREMIUM_PRICE", "")},
             "shared_ai": bool(quota.shared_key())}
 
 
@@ -703,12 +706,19 @@ def admin_overview(_: dict = Depends(admin)):
     people = [{"id": u["id"], "email": u["email"], "name": u["name"], "created": u["created"],
                "last_seen": u["last_seen"], "is_admin": bool(u["is_admin"]), "disabled": bool(u["disabled"]),
                "own_key": bool(accounts.own_key(u)), "cv": len(cvstore.cvs(u)),
+               "premium": accounts.is_premium(u), "premium_until": u.get("plan_until") or 0,
                "channels": sorted(k for k in ("discord", "ntfy", "telegram") if u["secrets"].get(k)),
                "paused": time.time() - (u["last_seen"] or 0) > collector.INACTIVE_DAYS * 86400,
                "usage": used.get(u["id"], {}), "ai_error": u["ai_error"] or "", "alert_error": u["alert_error"] or ""}
               for u in accounts.everyone()]
     names = {c["name"]: True for k, v in sources.companies().items() if isinstance(v, list) for c in v}
-    return {"users": people, "pool": pool, "last_run": db.kv_get("last_run", None), "sources": db.kv_prefix("src:"),
+    now, week = time.time(), 7 * 86400
+    stats = {"total": len(people), "active_7d": sum(now - (p["last_seen"] or 0) < week for p in people),
+             "active_30d": sum(now - (p["last_seen"] or 0) < 30 * 86400 for p in people),
+             "new_7d": sum(now - (p["created"] or 0) < week for p in people),
+             "with_cv": sum(p["cv"] > 0 for p in people), "with_alerts": sum(bool(p["channels"]) for p in people),
+             "own_key": sum(p["own_key"] for p in people), "premium": sum(p["premium"] for p in people)}
+    return {"users": people, "stats": stats, "pool": pool, "last_run": db.kv_get("last_run", None), "sources": db.kv_prefix("src:"),
             "companies": names, "shared": {"used": used.get(0, {}).get("req", 0), "limit": quota.limits()["shared_requests"]},
             "config": {"gemini": bool(quota.shared_key()), "adzuna": sources.adzuna_enabled(),
                        "france_travail": sources.ft_enabled(), "telegram": bool(notify.token()),
@@ -751,6 +761,7 @@ def admin_put_settings(body: dict, _: dict = Depends(admin)):
 class UserPatch(BaseModel):
     disabled: bool | None = None
     is_admin: bool | None = None
+    premium_days: int | None = None   # ajoute des jours de Premium ; 0 = repasse en formule gratuite
 
 
 def _target(uid: int, me: dict) -> dict:
@@ -764,8 +775,16 @@ def _target(uid: int, me: dict) -> dict:
 
 @app.patch("/api/admin/users/{uid}")
 def admin_patch_user(uid: int, body: UserPatch, me: dict = Depends(admin)):
-    _target(uid, me)
-    fields = {k: int(v) for k, v in body.model_dump().items() if v is not None}
+    target = accounts.by_id(uid) if body.premium_days is not None and uid == me["id"] else _target(uid, me)
+    if not target:
+        raise HTTPException(404, "Compte introuvable")
+    fields = {k: int(v) for k, v in body.model_dump(exclude={"premium_days"}).items() if v is not None}
+    if fields and uid == me["id"]:
+        raise HTTPException(400, "Impossible sur ton propre compte.")
+    if body.premium_days is not None:
+        days = max(0, min(3660, body.premium_days))
+        start = max(time.time(), target.get("plan_until") or 0)   # prolonge un Premium en cours
+        fields["plan_until"] = start + days * 86400 if days else 0
     if fields:
         accounts.set_fields(uid, **fields)
     return {"ok": True}

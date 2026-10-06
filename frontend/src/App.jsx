@@ -25,9 +25,63 @@ function Privacy({ info }) {
       <li><b>Secrets :</b> ta clé Gemini et tes adresses d'alerte sont chiffrées dans la base et ne sont jamais réaffichées.</li>
       <li><b>Tes droits :</b> tu peux télécharger toutes tes données et supprimer ton compte à tout moment, depuis l'onglet Réglages. La suppression est immédiate et définitive.</li>
       <li><b>Comptes inactifs :</b> sans visite pendant 3 semaines, ta veille se met en pause ; elle reprend dès que tu te reconnectes.</li>
+      <li><b>Cookies :</b> aucun cookie publicitaire ni traceur. Seule ta connexion est gardée dans ton navigateur.</li>
     </ul>
-    <p className="mute">Site gratuit, tenu par un étudiant, sans publicité ni traceur.{info?.contact && <> Contact : {info.contact}</>}</p>
+    {info?.contact && <p className="mute">Une question sur tes données : {info.contact}</p>}
   </div>);
+}
+
+function Terms({ info }) {
+  const paid = /^https:\/\//.test(info?.premium?.url || "");
+  return (<div className="card privacy">
+    <h3>Conditions d'utilisation</h3>
+    <ul>
+      <li><b>Le service :</b> {info?.name || "Veille Stages"} collecte des offres de stage publiées sur des sites d'entreprises et des agrégateurs, les trie selon ton profil et t'aide à préparer tes candidatures.</li>
+      <li><b>Ton compte :</b> une personne, un compte. Tu es responsable de ton mot de passe et de l'exactitude de ce que tu importes. Un compte utilisé pour surcharger le service ou nuire à d'autres personnes peut être désactivé.</li>
+      <li><b>Les offres :</b> elles appartiennent aux entreprises qui les publient. Une offre peut être expirée, modifiée ou erronée : vérifie toujours sur le site de l'entreprise avant de postuler.</li>
+      <li><b>L'intelligence artificielle :</b> les notes, analyses et lettres sont produites automatiquement. Elles peuvent contenir des erreurs : relis toujours un texte avant de l'envoyer. Le service ne garantit ni entretien ni embauche.</li>
+      <li><b>Disponibilité :</b> le service est fourni tel quel, sans garantie de fonctionnement continu. Des interruptions et des évolutions sont possibles.</li>
+      {paid && <li><b>Formule Premium :</b> elle relève tes limites d'usage pour la durée indiquée lors du paiement. Elle est activée à la main après paiement. Tu peux demander son remboursement dans les 14 jours qui suivent le paiement, en écrivant à l'adresse de contact.</li>}
+      <li><b>Arrêt :</b> tu peux supprimer ton compte à tout moment depuis l'onglet Réglages. Toutes tes données sont alors effacées.</li>
+      <li><b>Droit applicable :</b> droit français.</li>
+    </ul>
+  </div>);
+}
+
+function Imprint({ info }) {
+  return (<div className="card privacy">
+    <h3>Mentions légales</h3>
+    <ul>
+      <li><b>Éditeur :</b> {info?.owner || "site édité à titre personnel par un particulier"}.</li>
+      {info?.contact && <li><b>Contact :</b> {info.contact}</li>}
+      <li><b>Hébergement du site :</b> Render Services, Inc., San Francisco, États-Unis (render.com).</li>
+      <li><b>Hébergement de la base de données :</b> Supabase, Inc. (supabase.com).</li>
+    </ul>
+  </div>);
+}
+
+const Legal = ({ info, only }) => (<>
+  {(!only || only === "terms") && <Terms info={info} />}
+  {(!only || only === "privacy") && <Privacy info={info} />}
+  {(!only || only === "imprint") && <Imprint info={info} />}
+</>);
+
+// Premiers pas : deux réglages à faire une fois, dans l'ordre.
+function Start({ me, go }) {
+  const alerts = me.alerts.discord || me.alerts.ntfy || me.alerts.telegram;
+  if (me.cv && alerts) return null;
+  const steps = [
+    [!!me.cv, "Importe ton CV", "Un PDF suffit. Chaque offre est ensuite notée d'après ton profil.", "profile", "Importer mon CV"],
+    [!!alerts, "Branche tes alertes", "Les bonnes offres arrivent sur ton téléphone dès leur mise en ligne.", "settings", "Brancher mes alertes"],
+  ];
+  return (<section className="start">
+    <h2>Bienvenue{me.name ? ` ${me.name}` : ""}. Deux réglages et c'est parti.</h2>
+    <ol>{steps.map(([done, title, text, tab, label]) => (
+      <li key={tab} className={done ? "done" : ""}>
+        <div><b>{title}</b><span>{text}</span></div>
+        {done ? <em>Fait</em> : <button className="btn" onClick={() => go(tab)}>{label}</button>}
+      </li>))}</ol>
+  </section>);
 }
 
 const Mark = () => <span className="mark" aria-hidden="true" />;
@@ -57,7 +111,8 @@ function Auth({ info, onOk }) {
   const [f, setF] = useState({ email: "", password: "", name: "", invite: "", consent: false });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [doc, setDoc] = useState("");   // page légale ouverte : "", "terms", "privacy" ou "imprint"
+  const open = k => e => { e.preventDefault(); setDoc(doc === k ? "" : k); setTimeout(() => document.getElementById("legal")?.scrollIntoView({ behavior: "smooth" }), 50); };
   const set = k => e => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
   const go = async e => {
     e.preventDefault(); setErr(""); setBusy(true);
@@ -93,7 +148,7 @@ function Auth({ info, onOk }) {
             <label>Mot de passe{mode === "signup" && " (8 caractères minimum)"}<input type="password" required minLength={mode === "signup" ? 8 : 1} value={f.password} onChange={set("password")} autoComplete={mode === "login" ? "current-password" : "new-password"} /></label>
             {mode === "signup" && info?.signup === "invite" && <label>Code d'invitation<input required value={f.invite} onChange={set("invite")} /></label>}
             {mode === "signup" && <label className="check"><input type="checkbox" checked={f.consent} onChange={set("consent")} />
-              <span>J'accepte que mon CV soit enregistré et analysé pour me proposer des offres. <a href="#" onClick={e => { e.preventDefault(); setShowPrivacy(!showPrivacy); }}>Voir le détail</a></span></label>}
+              <span>J'accepte les <a href="#" onClick={open("terms")}>conditions d'utilisation</a> et que mon CV soit enregistré et analysé pour me proposer des offres (<a href="#" onClick={open("privacy")}>détail</a>).</span></label>}
             <button className="btn big" disabled={busy}>{busy ? "Un instant…" : mode === "login" ? "Se connecter" : "Créer mon compte gratuit"}</button>
             {err && <p className="err">{err}</p>}
             {mode === "login" && <p className="mute">Mot de passe oublié ? Demande à la personne qui t'a donné l'adresse du site : elle peut t'en créer un nouveau.</p>}
@@ -105,7 +160,6 @@ function Auth({ info, onOk }) {
         </ul>}
       </section>
     </main>
-    {showPrivacy && <div className="wrap"><Privacy info={info} /></div>}
     <section className="steps wrap">
       <h2>Comment ça marche</h2>
       <ol>
@@ -115,6 +169,14 @@ function Auth({ info, onOk }) {
         <li><b>Tu postules plus vite.</b> Lettre, message au recruteur et préparation d'entretien se rédigent à partir de l'offre et de ton CV.</li>
       </ol>
     </section>
+    <div className="wrap" id="legal">
+      {doc && <Legal info={info} only={doc} />}
+      <footer className="mute">
+        <a href="#" onClick={open("terms")}>Conditions d'utilisation</a>
+        <a href="#" onClick={open("privacy")}>Confidentialité</a>
+        <a href="#" onClick={open("imprint")}>Mentions légales</a>
+      </footer>
+    </div>
   </div>);
 }
 
@@ -374,8 +436,6 @@ export default function App() {
     setCtx({ ...ctx, state }); setFeedKey(k => k + 1);
   };
   const goSettings = e => { e?.preventDefault(); setTab("settings"); };
-  const hasAlerts = me.alerts.discord || me.alerts.ntfy || me.alerts.telegram;
-  const todo = [!me.cv && ["importer ton CV", "profile"], !hasAlerts && ["brancher tes alertes", "settings"]].filter(Boolean);
   const tabs = [["feed", "Offres"], ["track", `Suivi (${apps.length})`], ["ai", "Assistant"], ["profile", "Profil"], ["settings", "Réglages"]];
   if (me.is_admin) tabs.push(["admin", "Administration"]);
   const tab = tabAsked === "privacy" || tabs.some(([k]) => k === tabAsked) ? tabAsked : "feed";
@@ -387,16 +447,16 @@ export default function App() {
       <div className="who"><span className="mute">{me.name || me.email}</span><button className="btn quiet" onClick={out}>Se déconnecter</button></div>
     </div>
     <div className="wrap">
-      {todo.length > 0 && <p className="note">Pour finir l'installation, il reste à {todo.map(([l, t], i) => <span key={t}>{i > 0 && " et à "}<a href="#" onClick={e => { e.preventDefault(); setTab(t); }}>{l}</a></span>)}.</p>}
+      {tab === "feed" && <Start me={me} go={setTab} />}
       <div hidden={tab !== "feed"}><Feed me={me} onTrack={track} onUntrack={untrack} onAnalyse={toAI} status={status} refreshStatus={refreshStatus} reloadKey={feedKey} focusId={ctx?.id} toast={showToast} /></div>
       {tab === "track" && <Tracker apps={apps} reload={reload} />}
       {tab === "ai" && <Assistant me={me} setMe={setMe} offer={offer} setOffer={setOffer} cv={cv} setCv={setCv} goSettings={goSettings} ctx={ctx} onBack={() => setTab("feed")} onState={setCtxState} />}
       {tab === "profile" && <Profile me={me} reloadMe={reloadMe} goSettings={goSettings} />}
-      {tab === "settings" && <Settings me={me} setMe={m => setMeRaw(m)} reloadMe={reloadMe} onGone={out} />}
+      {tab === "settings" && <Settings me={me} setMe={m => setMeRaw(m)} reloadMe={reloadMe} onGone={out} info={info} />}
       {tab === "admin" && me.is_admin && <Admin me={me} />}
-      {tab === "privacy" && <Privacy info={info} />}
+      {tab === "privacy" && <Legal info={info} />}
       <footer className="mute">
-        <a href="#" onClick={e => { e.preventDefault(); setTab("privacy"); }}>Confidentialité et données</a>
+        <a href="#" onClick={e => { e.preventDefault(); setTab("privacy"); }}>Conditions, confidentialité et mentions légales</a>
         {info?.donate && /^https:\/\//.test(info.donate) && <a href={info.donate} target="_blank" rel="noopener noreferrer">Soutenir le site</a>}
       </footer>
     </div>

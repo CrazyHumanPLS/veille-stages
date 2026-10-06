@@ -139,6 +139,25 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);display
 .ctx{display:flex;gap:12px;justify-content:space-between;align-items:center;flex-wrap:wrap}
 .ctx .row{margin:0}
 
+/* ---------- premiers pas, Premium ---------- */
+.start{background:var(--ink);color:#fff;border-radius:var(--r-sheet);padding:22px;margin-bottom:18px}
+.start h2{font-size:1.3rem;margin:0 0 14px}
+.start ol{list-style:none;counter-reset:st;margin:0;padding:0;display:grid;gap:10px}
+.start li{counter-increment:st;display:flex;align-items:center;gap:14px;justify-content:space-between;flex-wrap:wrap;margin:0;padding:14px 16px;border-radius:14px;background:rgba(255,255,255,.08)}
+.start li>div{display:flex;flex-direction:column;flex:1;min-width:200px;padding-left:38px;position:relative}
+.start li>div::before{content:counter(st);position:absolute;left:0;top:2px;width:26px;height:26px;border-radius:50%;background:var(--hl);color:var(--ink);font:700 .95rem/26px var(--display);text-align:center}
+.start li span{color:#c9cee6;font-size:.92rem}
+.start li.done{opacity:.6}
+.start li.done>div::before{content:"✓"}
+.start li em{font-style:normal;font-weight:600;color:var(--hl)}
+.start .btn{background:var(--hl);border-color:var(--hl);color:var(--ink)}
+.start .btn:hover{background:#e6fb72;border-color:#e6fb72}
+.premium{border-color:var(--ink);border-width:2px}
+.premium.active{background:linear-gradient(100deg,#f6fbd2,#fff 60%)}
+.premium ul{margin:10px 0 14px}
+.tag.gold{background:var(--hl);color:var(--ink)}
+td .tag{margin:0 0 0 6px}
+
 /* ---------- message de confirmation ---------- */
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:40;display:flex;align-items:center;gap:14px;background:var(--ink);color:#fff;padding:11px 16px;border-radius:14px;box-shadow:0 10px 30px rgba(20,26,60,.28);max-width:calc(100vw - 24px);animation:rise .18s ease-out}
 .toast button{background:none;border:0;color:var(--hl);font:inherit;font-weight:700;cursor:pointer;padding:2px 4px}

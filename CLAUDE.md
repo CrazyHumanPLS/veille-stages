@@ -21,7 +21,7 @@ Créé le 06/10/2026 à partir de l'application personnelle `stage-app` (même a
 Variables d'environnement (valeurs dans Render uniquement) : `DATABASE_URL`, `SECRET_KEY` (créée par Render,
 ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI_API_KEY` (clé commune),
 `GEMINI_MODEL`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `SIGNUP_MODE`, `INVITE_CODE`, `CONTACT_EMAIL`, `DONATE_URL`,
-`TELEGRAM_TOKEN`, `TELEGRAM_BOT`, `COLLECT_EVERY_SEC`.
+`TELEGRAM_TOKEN`, `TELEGRAM_BOT`, `COLLECT_EVERY_SEC`, `LEGAL_NAME`, `PREMIUM_URL`, `PREMIUM_PRICE`.
 
 ## Choix de conception (décidés le 06/10/2026, l'utilisateur a délégué)
 
@@ -80,7 +80,13 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   d'offres limités à http(s), en-têtes de sécurité (CSP), mentions Discord neutralisées, limites sur les retris,
   taille des PDF (4 Mo) et des flux RSS (5 Mo). Relecture faite à la main ; le plugin claude-security n'a pas pu
   tourner dans la session (outil de workflow indisponible) : analyse complète à refaire avant une ouverture large.
-- 6 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
+- Passage « version professionnelle » (06/10 soir) : appels Gemini fiabilisés (3 essais espacés par modèle, délai
+  total plafonné, modèle de secours ; `ai.generate`), formule Premium (colonne `users.plan_until`, limites `p_score`,
+  `p_assist`, `p_cv`, activée à la main par l'administrateur avec « +30 j Premium », lien de paiement `PREMIUM_URL` et
+  prix `PREMIUM_PRICE`), statistiques d'usage dans Administration, parcours de démarrage en 2 étapes, conditions
+  d'utilisation et mentions légales (`LEGAL_NAME`, `CONTACT_EMAIL`), écran d'erreur, site installable sur téléphone
+  (`frontend/public/manifest.webmanifest` et icônes, sans service worker pour éviter les versions périmées).
+- 8 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.
 
@@ -88,4 +94,5 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
 
 L'utilisateur vise à terme une vraie application (web puis mobile) rapportant 200 à 300 € par mois. Ordre conseillé :
 mesurer l'usage (statistiques dans Administration), puis alternance et toute la France, alertes par e-mail,
-vérification d'adresse et mot de passe oublié, site installable sur téléphone, et seulement ensuite offre payante.
+vérification d'adresse et mot de passe oublié (demande un service d'envoi d'e-mails), paiement automatique
+(Stripe) à la place de l'activation manuelle du Premium, puis application sur les stores.
