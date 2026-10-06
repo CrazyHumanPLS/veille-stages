@@ -671,3 +671,17 @@ def test_domains_and_regions(monkeypatch):
         run(collector.resync_one(sarah["me"]["id"]))
         assert "Stage FPGA VHDL - électronique numérique" in set(rows(sarah["me"]["id"]))
     main._hits.clear()
+
+
+def test_old_offers_ignored():
+    """Une annonce mise en ligne depuis plus de 20 jours n'entre pas dans le stock ; sans date, elle est gardée."""
+    import datetime as dt
+    crit = scoring.pool_criteria(scoring.criteria())
+    day = lambda n: (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=n)).strftime("%Y-%m-%d")
+    raw = lambda pub: {"source": "X", "ext_id": "1", "company": "X", "title": "Stage ingénieur cybersécurité réseau",
+                       "place": "Paris", "url": "https://x.io/1", "description": "stage de fin d'études", "published": pub,
+                       "geo_ok": False}
+    assert collector.keep(raw(day(5)), crit)
+    assert collector.keep(raw(""), crit)
+    assert collector.keep(raw(day(21)), crit) is None
+    assert collector.keep(raw("Posted 30+ Days Ago"), crit) is None

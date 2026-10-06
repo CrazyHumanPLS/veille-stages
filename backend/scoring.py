@@ -261,13 +261,26 @@ def published_date(raw: str, ref_ts: float | None = None) -> str:
         return ""
 
 
+def too_old(published: str, days: int, now: float | None = None) -> bool:
+    """Annonce mise en ligne il y a plus de `days` jours ? Sans date connue : on garde (réponse False)."""
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", published or "")
+    if not m or days <= 0:
+        return False
+    try:
+        day = dt.datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), tzinfo=dt.timezone.utc)
+    except ValueError:
+        return False
+    ref = dt.datetime.fromtimestamp(now, dt.timezone.utc) if now else dt.datetime.now(dt.timezone.utc)
+    return (ref - day).days > days
+
+
 # ---------- même offre publiée ailleurs, ou déjà dans mes candidatures ? ----------
 def company_key(company: str) -> str:
     n = re.sub(r"\b(sas|sa|se|group|groupe|france|technologies|technology)\b", " ", norm(company))
     return re.sub(r"[^a-z0-9]", "", n)
+
+
 @functools.lru_cache(maxsize=20000)
-
-
 def title_key(title: str) -> str:
     n = norm(title)
     n = re.sub(r"\(?\b[hfmx]\s*/\s*[hfmx](\s*/\s*[hfmx])?\b\)?", " ", n)          # H/F, F/H, x/f/m

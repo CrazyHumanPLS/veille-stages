@@ -33,7 +33,8 @@ MAX_ALERTS_PER_RUN = 10      # au-delà : un message récapitulatif
 LOCK_SECONDS = 240
 DIGEST_ABOVE = 5             # au-delà de 5 bonnes offres d'un coup : un récapitulatif au lieu d'une alerte chacune
 HIDE_BELOW = 30              # score Gemini sous lequel une offre est masquée automatiquement
-STOCK_DAYS = 45              # ancienneté maximale des offres proposées à un nouvel inscrit
+MAX_AGE_DAYS = int(os.getenv("OFFER_MAX_DAYS", "20"))   # une annonce mise en ligne depuis plus longtemps est ignorée
+STOCK_DAYS = MAX_AGE_DAYS    # ancienneté maximale des offres proposées à un nouvel inscrit
 FIRST_RUN_AI = 40            # offres du stock notées par l'IA à l'inscription (les mieux placées par mots-clés)
 SHARED_BATCHES_PER_RUN = 6   # appels à la clé commune par passage (un appel = 8 offres) : respecte le débit gratuit
 OWN_BATCHES_PER_RUN = 5      # appels par passage pour quelqu'un qui utilise sa propre clé
@@ -60,13 +61,16 @@ def keep(raw: dict, crit: dict) -> dict | None:
         return None
     if not raw["geo_ok"] and not dom.in_france(raw["place"]):
         return None   # le stock commun couvre toute la France ; chacun filtre ensuite sur ses régions
+    published = scoring.published_date(raw["published"]) or raw["published"]
+    if scoring.too_old(published, MAX_AGE_DAYS):
+        return None   # annonce trop ancienne : le stage est probablement déjà pourvu
     score = scoring.kw_score(raw["title"], raw["description"], crit)
     if score < crit["min_kw"]:
         return None
     return {"id": scoring.fingerprint(raw["source"], raw["ext_id"], raw["company"], raw["title"], raw["place"]),
             "source": raw["source"], "company": raw["company"], "title": raw["title"], "place": raw["place"],
             "url": raw["url"], "description": raw["description"],
-            "published": scoring.published_date(raw["published"]) or raw["published"],
+            "published": published,
             "ext_id": raw["ext_id"][:200], "first_seen": time.time(), "kw_score": score}
 
 
@@ -220,7 +224,7 @@ def sync_user(u: dict, full: bool = False, site: dict | None = None) -> int:
     since = oldest if full or not u["cursor"] else max(oldest, u["cursor"] - 600)
     o, uo = db.offers, db.user_offers
     with db.engine.connect() as c:
-        pool = c.execute(select(o.c.id, o.c.company, o.c.title, o.c.description, o.c.first_seen, o.c.place)
+        pool = c.execute(select(o.c.id, o.c.company, o.c.title, o.c.description, o.c.first_seen, o.c.place, o.c.published)
                          .where(o.c.first_seen > since)).all()
         mine = {r.offer_id: r for r in c.execute(
             select(uo.c.offer_id, uo.c.state, uo.c.ai_score, uo.c.kw_score).where(uo.c.user_id == uid))}
@@ -231,6 +235,8 @@ def sync_user(u: dict, full: bool = False, site: dict | None = None) -> int:
         have = mine.get(r.id)
         if have and not full:
             continue
+        if not have and scoring.too_old(r.published, MAX_AGE_DAYS, now):
+            continue   # dans le stock depuis peu, mais mise en ligne il y a trop longtemps
         here = dom.place_ok(r.place, crit["regions"])
         score = scoring.kw_score(r.title, r.description, crit)
         if have:

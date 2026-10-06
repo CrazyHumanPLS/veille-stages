@@ -115,7 +115,10 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   lecture des réponses Greenhouse passent par `asyncio.to_thread` ; recherche de mots-clés accélérée (`scoring._has`,
   `title_key` en cache). Mesure avec réseau simulé (58 pages de 400 offres) : pire gel du site 0,3 s contre 2,4 s et plus.
   Règle : aucun traitement long directement dans une fonction `async`.
-- 10 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
+- Annonces anciennes (07/10) : une offre mise en ligne depuis plus de 20 jours (`OFFER_MAX_DAYS`) n'entre plus dans le
+  stock et n'est plus proposée (`scoring.too_old`, `collector.keep`, `sync_user`). Sans date connue, elle est gardée.
+  Les offres déjà affichées chez un inscrit ne sont pas retirées.
+- 11 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.
 
