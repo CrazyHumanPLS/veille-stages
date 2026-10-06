@@ -1,0 +1,26 @@
+# Render lit ce fichier tout seul : New > Blueprint > choisir ce dépôt.
+services:
+  - type: web
+    name: veille-stages
+    runtime: docker
+    plan: free
+    region: frankfurt
+    healthCheckPath: /api/health
+    envVars:
+      - {key: DATABASE_URL, sync: false}      # chaîne de connexion Supabase (Session pooler) d'un NOUVEAU projet
+      - {key: SECRET_KEY, generateValue: true} # créée par Render. Ne jamais la modifier ensuite.
+      - {key: ADMIN_EMAIL, sync: false}       # ton adresse : le compte créé avec elle devient administrateur
+      - {key: CRON_KEY, sync: false}          # mot secret du réveil automatique (lettres et chiffres uniquement)
+      - {key: APP_URL, sync: false}           # https://ton-service.onrender.com
+      - {key: APP_NAME, value: Veille Stages} # nom affiché sur le site
+      - {key: GEMINI_API_KEY, sync: false}    # clé commune, partagée entre les inscrits sans clé (facultatif)
+      - {key: GEMINI_MODEL, value: gemini-3.5-flash-lite}
+      - {key: ADZUNA_APP_ID, sync: false}     # facultatif
+      - {key: ADZUNA_APP_KEY, sync: false}    # facultatif
+      - {key: SIGNUP_MODE, value: open}       # open / invite / closed (modifiable ensuite depuis Administration)
+      - {key: INVITE_CODE, sync: false}       # facultatif : code demandé à l'inscription en mode invite
+      - {key: CONTACT_EMAIL, sync: false}     # facultatif : adresse affichée dans « Confidentialité »
+      - {key: DONATE_URL, sync: false}        # facultatif : lien « Soutenir le site » (Ko-fi, PayPal…)
+      - {key: TELEGRAM_TOKEN, sync: false}    # facultatif : bot Telegram du site
+      - {key: TELEGRAM_BOT, sync: false}      # facultatif : nom du bot, sans @
+      - {key: COLLECT_EVERY_SEC, value: "180"}

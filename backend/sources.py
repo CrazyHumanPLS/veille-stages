@@ -1,0 +1,236 @@
+"""Sources d'offres. Chaque fonction renvoie une liste d'offres brutes :
+{source, ext_id, company, title, place, url, description, published, geo_ok}
+geo_ok=True quand la source a déjà filtré sur l'Île-de-France.
+Uniquement des API officielles ou des flux publics prévus pour être lus par des programmes.
+"""
+import json
+import os
+import pathlib
+import re
+import time
+from urllib.parse import parse_qs, urlparse
+import xml.etree.ElementTree as ET
+
+import httpx
+
+from scoring import strip_html
+
+UA = {"User-Agent": "veille-stages/1.0 (veille d'offres de stage)"}
+HERE = pathlib.Path(__file__).parent
+
+
+def companies() -> dict:
+    try:
+        return json.loads((HERE / "companies.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _offer(source, ext_id, company, title, place, url, description="", published="", geo_ok=False):
+    return {"source": source, "ext_id": str(ext_id), "company": (company or "").strip()[:200],
+            "title": (title or "").strip()[:300], "place": (place or "").strip()[:200], "url": url or "",
+            "description": strip_html(description)[:6000], "published": (published or "")[:40], "geo_ok": geo_ok}
+
+
+# ---------- France Travail (API officielle, gratuite) ----------
+_tok = {"v": None, "exp": 0}
+
+
+def ft_enabled() -> bool:
+    return bool(os.getenv("FT_CLIENT_ID") and os.getenv("FT_CLIENT_SECRET"))
+
+
+async def ft_token(h: httpx.AsyncClient) -> str:
+    if _tok["v"] and time.time() < _tok["exp"]:
+        return _tok["v"]
+    r = await h.post(
+        "https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=/partenaire",
+        data={"grant_type": "client_credentials", "client_id": os.getenv("FT_CLIENT_ID"),
+              "client_secret": os.getenv("FT_CLIENT_SECRET"), "scope": "api_offresdemploiv2 o2dsoffre"})
+    if r.status_code != 200:
+        raise RuntimeError(f"authentification France Travail refusée ({r.status_code}) : {r.text[:150]}")
+    j = r.json()
+    _tok.update(v=j["access_token"], exp=time.time() + j.get("expires_in", 1200) - 60)
+    return _tok["v"]
+
+
+def _ft_map(o: dict) -> dict:
+    origine = o.get("origineOffre") or {}
+    url = origine.get("urlOrigine") or f"https://candidat.francetravail.fr/offres/recherche/detail/{o.get('id')}"
+    return _offer("France Travail", o.get("id"), (o.get("entreprise") or {}).get("nom") or "Entreprise non précisée",
+                  o.get("intitule"), (o.get("lieuTravail") or {}).get("libelle", ""), url,
+                  o.get("description", ""), o.get("dateCreation", ""), geo_ok=True)
+
+
+async def ft_search(h: httpx.AsyncClient, mots: str, region: str = "11", departement: str = "",
+                    days: int | None = 3, limit: int = 50) -> list[dict]:
+    params = {"motsCles": mots, "range": f"0-{limit - 1}", "sort": "1"}
+    if days:
+        params["publieeDepuis"] = str(days)
+    if departement:
+        params["departement"] = departement
+    elif region:
+        params["region"] = region
+    r = await h.get("https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search",
+                    params=params, headers={"Authorization": f"Bearer {await ft_token(h)}"})
+    if r.status_code == 204:
+        return []
+    if r.status_code not in (200, 206):
+        raise RuntimeError(f"France Travail {r.status_code} : {r.text[:150]}")
+    return [_ft_map(o) for o in r.json().get("resultats", [])]
+
+
+async def france_travail(h: httpx.AsyncClient, crit: dict) -> list[dict]:
+    out, errors = [], []
+    for q in crit["ft_queries"]:
+        try:
+            out += await ft_search(h, q)
+        except Exception as e:  # une requête en échec ne bloque pas les autres
+            errors.append(str(e))
+    if errors and not out:
+        raise RuntimeError(errors[0])
+    return out
+
+
+# ---------- Adzuna (API officielle, gratuite, quota limité) ----------
+def adzuna_enabled() -> bool:
+    return bool(os.getenv("ADZUNA_APP_ID") and os.getenv("ADZUNA_APP_KEY"))
+
+
+async def adzuna(h: httpx.AsyncClient, crit: dict) -> list[dict]:
+    # Une requête par couple de mots, tous obligatoires (ex. "stage cybersécurité").
+    results, errors = [], []
+    for q in crit["adzuna_queries"]:
+        r = await h.get("https://api.adzuna.com/v1/api/jobs/fr/search/1", params={
+            "app_id": os.getenv("ADZUNA_APP_ID"), "app_key": os.getenv("ADZUNA_APP_KEY"),
+            "what_and": q, "what_exclude": "alternance apprentissage", "where": "Île-de-France",
+            "sort_by": "date", "max_days_old": 10, "results_per_page": 50, "content-type": "application/json"})
+        if r.status_code != 200:
+            errors.append(f"Adzuna {r.status_code} : {r.text[:150]}")
+            continue
+        results += r.json().get("results", [])
+    if errors and not results:
+        raise RuntimeError(errors[0])
+    return [_offer("Adzuna", o.get("id"), (o.get("company") or {}).get("display_name") or "Entreprise non précisée",
+                   o.get("title"), (o.get("location") or {}).get("display_name", ""), o.get("redirect_url"),
+                   o.get("description", ""), o.get("created", ""), geo_ok=True)
+            for o in results]
+
+
+# ---------- Pages carrières (API publiques des outils de recrutement) ----------
+async def greenhouse(h: httpx.AsyncClient, c: dict) -> list[dict]:
+    r = await h.get(f"https://boards-api.greenhouse.io/v1/boards/{c['token']}/jobs", params={"content": "true"})
+    r.raise_for_status()
+    return [_offer(c["name"], j.get("id"), c["name"], j.get("title"), (j.get("location") or {}).get("name", ""),
+                   j.get("absolute_url"), j.get("content", ""), j.get("first_published") or j.get("updated_at", ""))
+            for j in r.json().get("jobs", [])]
+
+
+async def lever(h: httpx.AsyncClient, c: dict) -> list[dict]:
+    r = await h.get(f"https://api.lever.co/v0/postings/{c['token']}", params={"mode": "json"})
+    r.raise_for_status()
+    out = []
+    for j in r.json():
+        cat = j.get("categories") or {}
+        place = ", ".join(cat.get("allLocations") or [cat.get("location") or ""])
+        when = time.strftime("%Y-%m-%d", time.gmtime(j["createdAt"] / 1000)) if j.get("createdAt") else ""
+        title = j.get("text", "")
+        if "intern" in (cat.get("commitment") or "").lower() or "stage" in (cat.get("commitment") or "").lower():
+            title += " (stage)"
+        out.append(_offer(c["name"], j.get("id"), c["name"], title, place, j.get("hostedUrl"),
+                          j.get("descriptionPlain", ""), when))
+    return out
+
+
+async def ashby(h: httpx.AsyncClient, c: dict) -> list[dict]:
+    r = await h.get(f"https://api.ashbyhq.com/posting-api/job-board/{c['token']}")
+    r.raise_for_status()
+    out = []
+    for j in r.json().get("jobs", []):
+        title = j.get("title", "")
+        if (j.get("employmentType") or "").lower() == "intern":
+            title += " (stage)"
+        out.append(_offer(c["name"], j.get("id"), c["name"], title, j.get("location", ""), j.get("jobUrl"),
+                          j.get("descriptionPlain", ""), j.get("publishedAt", "")))
+    return out
+
+
+async def smartrecruiters(h: httpx.AsyncClient, c: dict) -> list[dict]:
+    out = []
+    for q in ("stage", "intern"):
+        for page in range(3):  # 100 résultats par page
+            r = await h.get(f"https://api.smartrecruiters.com/v1/companies/{c['token']}/postings",
+                            params={"country": "fr", "q": q, "limit": 100, "offset": page * 100})
+            r.raise_for_status()
+            posts = r.json().get("content", [])
+            for j in posts:
+                loc = j.get("location") or {}
+                place = ", ".join(x for x in (loc.get("city"), loc.get("region")) if x)
+                out.append(_offer(c["name"], j.get("id"), (j.get("company") or {}).get("name") or c["name"],
+                                  j.get("name"), place,
+                                  f"https://jobs.smartrecruiters.com/{c['token']}/{j.get('id')}", "",
+                                  j.get("releasedDate", "")))
+            if len(posts) < 100:
+                break
+    return out
+
+
+async def workday(h: httpx.AsyncClient, c: dict) -> list[dict]:
+    """Même point d'accès que le site carrières public de l'entreprise (non documenté)."""
+    base = f"https://{c['host']}"
+    out = []
+    for q in ("stage", "internship"):
+        for page in range(5):  # 20 résultats par page
+            r = await h.post(f"{base}/wday/cxs/{c['tenant']}/{c['site']}/jobs",
+                             json={"appliedFacets": {}, "limit": 20, "offset": page * 20, "searchText": q},
+                             headers={"Accept": "application/json"})
+            r.raise_for_status()
+            posts = r.json().get("jobPostings", [])
+            for j in posts:
+                path = j.get("externalPath", "")
+                out.append(_offer(c["name"], path.rsplit("/", 1)[-1] or j.get("title"), c["name"], j.get("title"),
+                                  j.get("locationsText", ""), f"{base}/{c['site']}{path}", "", j.get("postedOn", "")))
+            if len(posts) < 20:
+                break
+    return out
+
+
+ATS = {"greenhouse": greenhouse, "lever": lever, "ashby": ashby,
+       "smartrecruiters": smartrecruiters, "workday": workday}
+
+
+# ---------- Flux RSS / Atom (ex. alerte Google transformée en flux) ----------
+def _txt(node, *names):
+    for n in names:
+        for child in node:
+            if child.tag.split("}")[-1] == n:
+                if n == "link" and child.get("href"):
+                    return child.get("href")
+                if child.text:
+                    return child.text.strip()
+    return ""
+
+
+def _real_link(link: str) -> str:
+    """Les alertes Google enveloppent le vrai lien : https://www.google.com/url?...&url=LE_VRAI_LIEN&..."""
+    if "google." in link and "/url?" in link:
+        target = parse_qs(urlparse(link).query).get("url") or parse_qs(urlparse(link).query).get("q")
+        if target:
+            return target[0]
+    return link
+
+
+async def rss(h: httpx.AsyncClient, url: str, company: str = "", label: str = "") -> list[dict]:
+    """company = entreprise du flux (site carrières) ; vide pour un flux multi-entreprises (alerte Google)."""
+    r = await h.get(url)
+    r.raise_for_status()
+    root = ET.fromstring(r.content)
+    items = [n for n in root.iter() if n.tag.split("}")[-1] in ("item", "entry")]
+    out = []
+    for it in items[:100]:
+        link = _real_link(_txt(it, "link"))
+        title = strip_html(_txt(it, "title"))
+        title = re.sub(r"\s*[|\-–]\s*(LinkedIn|Indeed(\.com)?|Welcome to the Jungle|HelloWork|Glassdoor)\s*$", "", title)
+        out.append(_offer(label or company or "RSS", _txt(it, "guid", "id") or link, company, title, "", link,
+                          _txt(it, "description", "summary", "content"), _txt(it, "pubDate", "published", "updated")))
+    return out

@@ -1,0 +1,58 @@
+{
+  "_aide": "Sources surveillées directement, toutes vérifiées le 05/10/2026. Pour en ajouter une : ouvre la page carrières de l'entreprise, regarde son adresse (boards.greenhouse.io/XXX, jobs.lever.co/XXX, jobs.ashbyhq.com/XXX, jobs.smartrecruiters.com/XXX, XXX.wdN.myworkdayjobs.com/SITE) et ajoute une ligne dans la rubrique correspondante. Rubrique rss : sites carrières qui publient un flux RSS (souvent à l'adresse /offre-de-emploi/tous-les-flux-rss.aspx).",
+  "greenhouse": [
+    {"name": "Datadog", "token": "datadog"},
+    {"name": "Cloudflare", "token": "cloudflare"},
+    {"name": "Doctolib", "token": "doctolib"},
+    {"name": "Dataiku", "token": "dataiku"},
+    {"name": "Mirakl", "token": "mirakl"},
+    {"name": "Algolia", "token": "algolia"}
+  ],
+  "lever": [
+    {"name": "Qonto", "token": "qonto"},
+    {"name": "Swile", "token": "swile"}
+  ],
+  "ashby": [
+    {"name": "Alan", "token": "alan"},
+    {"name": "Filigran", "token": "filigran"},
+    {"name": "Pennylane", "token": "pennylane"},
+    {"name": "Swan", "token": "swan"}
+  ],
+  "smartrecruiters": [
+    {"name": "Devoteam", "token": "Devoteam"},
+    {"name": "Sopra Steria", "token": "SopraSteria1"},
+    {"name": "Capgemini", "token": "Capgemini1"},
+    {"name": "Alten", "token": "ALTEN"},
+    {"name": "Inetum", "token": "Inetum"},
+    {"name": "Talan", "token": "Talan"},
+    {"name": "Expleo", "token": "ExpleoGroup"},
+    {"name": "Scalian", "token": "Scalian"},
+    {"name": "SII", "token": "Sii"},
+    {"name": "Econocom", "token": "Econocom"},
+    {"name": "Advens", "token": "Advens"},
+    {"name": "Idemia", "token": "IDEMIA"},
+    {"name": "Worldline", "token": "Worldline"}
+  ],
+  "workday": [
+    {"name": "Thales", "host": "thales.wd3.myworkdayjobs.com", "tenant": "thales", "site": "Careers"},
+    {"name": "Airbus", "host": "ag.wd3.myworkdayjobs.com", "tenant": "ag", "site": "Airbus"},
+    {"name": "Equinix", "host": "equinix.wd1.myworkdayjobs.com", "tenant": "equinix", "site": "External"},
+    {"name": "HPE", "host": "hpe.wd5.myworkdayjobs.com", "tenant": "hpe", "site": "Jobsathpe"},
+    {"name": "Renault", "host": "alliancewd.wd3.myworkdayjobs.com", "tenant": "alliancewd", "site": "renault-group-careers"},
+    {"name": "Air Liquide", "host": "airliquidehr.wd3.myworkdayjobs.com", "tenant": "airliquidehr", "site": "AirLiquideExternalCareer"},
+    {"name": "Sanofi", "host": "sanofi.wd3.myworkdayjobs.com", "tenant": "sanofi", "site": "SanofiCareers"},
+    {"name": "Kyndryl", "host": "kyndryl.wd5.myworkdayjobs.com", "tenant": "kyndryl", "site": "KyndrylProfessionalCareers"},
+    {"name": "DXC Technology", "host": "dxctechnology.wd1.myworkdayjobs.com", "tenant": "dxctechnology", "site": "DXCJobs"},
+    {"name": "Accenture", "host": "accenture.wd103.myworkdayjobs.com", "tenant": "accenture", "site": "AccentureCareers"},
+    {"name": "Red Hat", "host": "redhat.wd5.myworkdayjobs.com", "tenant": "redhat", "site": "jobs"},
+    {"name": "Nvidia", "host": "nvidia.wd5.myworkdayjobs.com", "tenant": "nvidia", "site": "NVIDIAExternalCareerSite"},
+    {"name": "CrowdStrike", "host": "crowdstrike.wd5.myworkdayjobs.com", "tenant": "crowdstrike", "site": "crowdstrikecareers"},
+    {"name": "Ciena", "host": "ciena.wd5.myworkdayjobs.com", "tenant": "ciena", "site": "Careers"}
+  ],
+  "rss": [
+    {"name": "Sagemcom", "url": "https://careers.sagemcom.com/handlers/offerRss.ashx?LCID=1036&Rss_Contract=3663"},
+    {"name": "CEA", "url": "https://www.emploi.cea.fr/handlers/offerRss.ashx?LCID=1036&Rss_Contract=579&Rss_JobRegion=208"},
+    {"name": "Spie", "url": "https://spie-job.talent-soft.com/handlers/offerRss.ashx?LCID=1036&Rss_Contract=3325&Rss_JobRegion=208"},
+    {"name": "Orange NRS", "url": "https://orangenrs.profils.org/handlers/offerRss.ashx?LCID=1036&Rss_Contract=467"}
+  ]
+}
