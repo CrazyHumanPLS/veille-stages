@@ -76,7 +76,7 @@ function Auth({ info, onOk }) {
   </div>);
 }
 
-function Feed({ me, onTrack, onAnalyse, status, refreshStatus }) {
+function Feed({ me, onTrack, onAnalyse, status, refreshStatus, reloadKey, focusId }) {
   const [list, setList] = useState(null);
   const [f, setF] = useState({ state: "new", min: 0, q: "", hours: 0 });
   const [sort, setSort] = useState("seen");
@@ -87,7 +87,7 @@ function Feed({ me, onTrack, onAnalyse, status, refreshStatus }) {
     api(`/api/offers?state=${f.state}&min_score=${f.min}&hours=${f.hours}&q=${encodeURIComponent(f.q)}`)
       .then(l => { setList(l); setErr(""); }).catch(e => setErr(e.message));
   }, [f]);
-  useEffect(() => { load(); const t = setInterval(() => { load(); refreshStatus(); }, 60000); return () => clearInterval(t); }, [load]);
+  useEffect(() => { load(); const t = setInterval(() => { load(); refreshStatus(); }, 60000); return () => clearInterval(t); }, [load, reloadKey]);
   const setState = async (o, state) => { await api(`/api/offers/${o.id}`, { method: "PATCH", body: JSON.stringify({ state }) }); load(); };
   const refresh = async () => {
     setBusy(true); setNote(""); setErr("");
@@ -99,7 +99,7 @@ function Feed({ me, onTrack, onAnalyse, status, refreshStatus }) {
     } catch (e) { setErr(e.message); }
     setBusy(false); load(); refreshStatus();
   };
-  const analyse = async o => { const full = await api(`/api/offers/${o.id}`); onAnalyse(`${full.title}\n${full.company} · ${full.place}\n\n${full.description}`, full.cv || ""); };
+  const analyse = async o => { const full = await api(`/api/offers/${o.id}`); onAnalyse(`${full.title}\n${full.company} · ${full.place}\n\n${full.description}`, full.cv || "", { id: o.id, title: o.title, company: o.company, url: o.url, state: o.state }); };
   const run = status?.last_run;
   return (<>
     <div className="stats">
@@ -125,7 +125,7 @@ function Feed({ me, onTrack, onAnalyse, status, refreshStatus }) {
     {list && !list.length && <p className="mute">Aucune offre ici pour l'instant. La collecte tourne en continu ; tes mots-clés se règlent dans l'onglet Réglages.</p>}
     {list && [...list].sort((a, b) => sort === "score" ? best(b) - best(a)
       : sort === "pub" ? (b.published || "0").localeCompare(a.published || "0") : b.first_seen - a.first_seen).map(o => (
-      <div className="card offer" key={o.id}>
+      <div className={`card offer${focusId === o.id ? " focus" : ""}`} key={o.id} id={`offer-${o.id}`}>
         <div className={`score ${tone(best(o))}`} title={o.ai_score == null ? "Score par mots-clés" : "Score de l'IA d'après ton CV"}>{best(o)}{o.ai_score == null && <small>mots-clés</small>}</div>
         <div className="body">
           <strong>{o.title}</strong>
@@ -184,7 +184,7 @@ export function Quota({ ai, kind, what, goSettings }) {
   return <p className={left ? "mute" : "note"}>{left ? `Il te reste ${left} ${what} aujourd'hui sur ${k.limit}.` : `Limite du jour atteinte (${k.limit} ${what}). Retour à zéro à minuit.`} <a href="#" onClick={goSettings}>Passer en illimité avec ta propre clé gratuite</a></p>;
 }
 
-function Assistant({ me, setMe, offer, setOffer, cv, setCv, goSettings }) {
+function Assistant({ me, setMe, offer, setOffer, cv, setCv, goSettings, ctx, onBack, onState }) {
   const [out, setOut] = useState("Choisis une action. Le CV sélectionné ci-dessous est utilisé comme base.");
   const [busy, setBusy] = useState(false);
   const run = async task => {
@@ -196,6 +196,15 @@ function Assistant({ me, setMe, offer, setOffer, cv, setCv, goSettings }) {
   };
   const mine = Object.entries(me.cv_labels || {}).filter(([k]) => me.cv_slots?.includes(k));
   return (<>
+    <div className="row"><button className="btn ghost" onClick={onBack}>← Retour aux offres</button></div>
+    {ctx && <div className="card ctx">
+      <div><strong>{ctx.title}</strong><div className="mute">{ctx.company || "Entreprise non précisée"}{ctx.state === "saved" && " · gardée"}{ctx.state === "applied" && " · postulée"}</div></div>
+      <div className="row">
+        <a className="btn" href={ctx.url} target="_blank" rel="noopener noreferrer">Voir l'offre</a>
+        {ctx.state !== "saved" && ctx.state !== "applied" && <button className="btn ghost" onClick={() => onState("saved")}>Garder</button>}
+        {ctx.state !== "applied" && <button className="btn ghost" onClick={() => onState("applied")}>J'ai postulé</button>}
+      </div>
+    </div>}
     <Quota ai={me.ai} kind="assist" what="générations" goSettings={goSettings} />
     {mine.length > 1 && <div className="row"><label>CV utilisé <select value={cv} onChange={e => setCv(e.target.value)}>
       <option value="">Tous mes CV</option>{mine.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label></div>}
@@ -254,10 +263,32 @@ function Profile({ me, reloadMe, goSettings }) {
   </>);
 }
 
+const TABS = ["feed", "track", "ai", "profile", "settings", "admin", "privacy"];
+const hashTab = () => { const h = window.location.hash.slice(1); return TABS.includes(h) ? h : "feed"; };
+
 export default function App() {
   const [me, setMeRaw] = useState(undefined);   // undefined : chargement, null : déconnecté
   const [info, setInfo] = useState(null);
-  const [tab, setTab] = useState("feed");
+  const [tab, setTabRaw] = useState(hashTab);
+  const [ctx, setCtx] = useState(null);          // offre ouverte dans l'assistant
+  const [feedKey, setFeedKey] = useState(0);     // augmente pour recharger la liste des offres
+  const tabRef = useRef(tab);
+  const feedScroll = useRef(0);                  // position de lecture dans la liste des offres
+  const setTab = t => { if (t !== tabRef.current) window.location.hash = t; };
+  useEffect(() => {
+    try { window.history.scrollRestoration = "manual"; } catch { /* navigateur ancien */ }
+    const onHash = () => { tabRef.current = hashTab(); setTabRaw(tabRef.current); };
+    const onScroll = () => { if (tabRef.current === "feed") feedScroll.current = window.scrollY; };
+    window.addEventListener("hashchange", onHash);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => { window.removeEventListener("hashchange", onHash); window.removeEventListener("scroll", onScroll); };
+  }, []);
+  // En revenant sur les offres, on retrouve l'endroit exact où l'on s'était arrêté.
+  useEffect(() => {
+    const y = tab === "feed" ? feedScroll.current : 0;
+    const t = setTimeout(() => window.scrollTo(0, y), 0);
+    return () => clearTimeout(t);
+  }, [tab]);
   const [apps, setApps] = useState([]);
   const [offer, setOffer] = useState("");
   const [cv, setCv] = useState("");
@@ -277,7 +308,13 @@ export default function App() {
   if (me === undefined) return <div className="wrap"><p className="mute">Chargement… (jusqu'à une minute si le serveur dormait)</p></div>;
   if (!me) return <Auth info={info} onOk={start} />;
   const track = async a => { await post("/api/applications", a); reload(); };
-  const toAI = (t, k = "") => { setOffer(t); setCv(k); setTab("ai"); };
+  const toAI = (t, k = "", o = null) => { setOffer(t); setCv(k); setCtx(o); setTab("ai"); };
+  const setCtxState = async state => {
+    if (!ctx) return;
+    if (state === "applied") await track({ company: ctx.company, job: ctx.title, url: ctx.url, status: 1 });
+    await api(`/api/offers/${ctx.id}`, { method: "PATCH", body: JSON.stringify({ state }) });
+    setCtx({ ...ctx, state }); setFeedKey(k => k + 1);
+  };
   const goSettings = e => { e?.preventDefault(); setTab("settings"); };
   const hasAlerts = me.alerts.discord || me.alerts.ntfy || me.alerts.telegram;
   const todo = [!me.cv && ["importer ton CV", "profile"], !hasAlerts && ["brancher tes alertes", "settings"]].filter(Boolean);
@@ -291,9 +328,9 @@ export default function App() {
     </header>
     {todo.length > 0 && <p className="note">Pour finir l'installation, il reste à {todo.map(([l, t], i) => <span key={t}>{i > 0 && " et à "}<a href="#" onClick={e => { e.preventDefault(); setTab(t); }}>{l}</a></span>)}.</p>}
     <nav>{tabs.map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}</nav>
-    {tab === "feed" && <Feed me={me} onTrack={track} onAnalyse={toAI} status={status} refreshStatus={refreshStatus} />}
+    <div hidden={tab !== "feed"}><Feed me={me} onTrack={track} onAnalyse={toAI} status={status} refreshStatus={refreshStatus} reloadKey={feedKey} focusId={ctx?.id} /></div>
     {tab === "track" && <Tracker apps={apps} reload={reload} />}
-    {tab === "ai" && <Assistant me={me} setMe={setMe} offer={offer} setOffer={setOffer} cv={cv} setCv={setCv} goSettings={goSettings} />}
+    {tab === "ai" && <Assistant me={me} setMe={setMe} offer={offer} setOffer={setOffer} cv={cv} setCv={setCv} goSettings={goSettings} ctx={ctx} onBack={() => setTab("feed")} onState={setCtxState} />}
     {tab === "profile" && <Profile me={me} reloadMe={reloadMe} goSettings={goSettings} />}
     {tab === "settings" && <Settings me={me} setMe={m => setMeRaw(m)} reloadMe={reloadMe} onGone={() => { setToken(null); setMeRaw(null); }} />}
     {tab === "admin" && me.is_admin && <Admin me={me} />}

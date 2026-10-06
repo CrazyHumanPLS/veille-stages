@@ -73,3 +73,7 @@ footer{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);text-al
 .card table td:last-child{text-align:right}
 .scroll table td:last-child{text-align:left}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.offer.focus{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc)}
+.ctx{display:flex;gap:12px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+.ctx .row{margin:0}
+[hidden]{display:none!important}
