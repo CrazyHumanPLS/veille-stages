@@ -69,7 +69,9 @@ def handler(req: httpx.Request) -> httpx.Response:
         ids = [l.split("=")[1] for l in prompt.splitlines() if l.startswith("### id=")]
         if not ids:
             return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": json.dumps(
-                {"resume": "Profil test", "mots_cles": ["bgp", "cisco"]}) if "JSON" in prompt else "Texte généré"}]}}]})
+                {"resume": "Profil test", "mots_cles": ["bgp", "cisco"],
+                 **({"domaines": ["embarque", "inconnu"], "objectif": "Je cherche un stage en logiciel embarqué (C, STM32, FPGA)."}
+                    if "VHDL" in prompt else {})}) if "JSON" in prompt else "Texte généré"}]}}]})
         cv = "cv2" if "[CV cv2" in prompt else "cv1"
         return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": json.dumps(
             [{"id": i, "score": 85, "cv": cv, "raison": "Très proche du profil"} for i in ids])}]}}]})
@@ -685,3 +687,26 @@ def test_old_offers_ignored():
     assert collector.keep(raw(""), crit)
     assert collector.keep(raw(day(21)), crit) is None
     assert collector.keep(raw("Posted 30+ Days Ago"), crit) is None
+
+
+def test_domains_from_cv():
+    """Un nouvel inscrit qui n'a rien réglé reçoit ses domaines et sa phrase d'après son CV ; ses choix priment ensuite."""
+    from fastapi.testclient import TestClient
+    import main
+    main._hits.clear()
+    with TestClient(main.app) as c:
+        new = lambda mail: {"Authorization": "Bearer " + c.post("/api/signup", json={
+            "email": mail, "password": "motdepasse", "consent": True}).json()["token"]}
+        cv = lambda h, text: c.post("/api/profile/cv?slot=cv1", files={"file": ("cv.txt", (text * 20).encode())}, headers=h).json()
+        h = new("emb@ex.fr")
+        assert c.get("/api/criteria", headers=h).json()["domains"] == ["reseaux"]
+        assert cv(h, "VHDL FPGA STM32 C embarqué ")["error"] == ""
+        crit = c.get("/api/criteria", headers=h).json()
+        assert crit["domains"] == ["embarque"] and crit["regions"] == ["idf"] and "embarqué" in crit["goal"]
+        assert "fpga" in [w.lower() for w in crit["strong"] + crit["tech"]] or crit["strong"]
+        # quelqu'un qui a déjà choisi ses domaines garde ses choix
+        h2 = new("choix@ex.fr")
+        c.put("/api/criteria", json={"domains": ["data"], "goal": "Je veux un stage en data science à Lyon"}, headers=h2)
+        cv(h2, "VHDL FPGA STM32 C embarqué ")
+        crit = c.get("/api/criteria", headers=h2).json()
+        assert crit["domains"] == ["data"] and crit["goal"] == "Je veux un stage en data science à Lyon"

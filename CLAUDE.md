@@ -118,7 +118,11 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
 - Annonces anciennes (07/10) : une offre mise en ligne depuis plus de 20 jours (`OFFER_MAX_DAYS`) n'entre plus dans le
   stock et n'est plus proposée (`scoring.too_old`, `collector.keep`, `sync_user`). Sans date connue, elle est gardée.
   Les offres déjà affichées chez un inscrit ne sont pas retirées.
-- 11 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
+- Réglages d'après le CV (07/10) : à la première analyse de CV d'un compte qui n'a encore rien réglé, l'IA renvoie
+  aussi `domaines` et `objectif` (`ai.analyse_cv`) ; `main._analyse` les enregistre comme domaines et phrase de
+  recherche. Dès que la personne a choisi elle-même, ses choix ne sont plus modifiés. `FIRST_RUN_AI` passe de 40 à 30
+  pour laisser 10 notes aux nouveautés le jour de l'inscription.
+- 12 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.
 

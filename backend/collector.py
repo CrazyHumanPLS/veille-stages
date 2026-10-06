@@ -35,7 +35,7 @@ DIGEST_ABOVE = 5             # au-delà de 5 bonnes offres d'un coup : un récap
 HIDE_BELOW = 30              # score Gemini sous lequel une offre est masquée automatiquement
 MAX_AGE_DAYS = int(os.getenv("OFFER_MAX_DAYS", "20"))   # une annonce mise en ligne depuis plus longtemps est ignorée
 STOCK_DAYS = MAX_AGE_DAYS    # ancienneté maximale des offres proposées à un nouvel inscrit
-FIRST_RUN_AI = 40            # offres du stock notées par l'IA à l'inscription (les mieux placées par mots-clés)
+FIRST_RUN_AI = 30            # offres du stock notées à l'inscription (les mieux placées) ; le reste du quota du jour sert aux nouveautés
 SHARED_BATCHES_PER_RUN = 6   # appels à la clé commune par passage (un appel = 8 offres) : respecte le débit gratuit
 OWN_BATCHES_PER_RUN = 5      # appels par passage pour quelqu'un qui utilise sa propre clé
 INACTIVE_DAYS = 21           # sans visite du site pendant ce délai, la veille du compte se met en pause

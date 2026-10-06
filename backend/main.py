@@ -581,15 +581,29 @@ def _profile_view(u: dict) -> dict:
 
 async def _analyse(u: dict) -> str:
     """Analyse l'ensemble des CV avec Gemini et ajoute leurs mots-clés aux réglages. Renvoie un message d'erreur ou ''."""
+    before = scoring.user_criteria(u)
+    # Tant que la personne n'a rien choisi, on ne souffle pas « réseaux, Île-de-France » à l'IA : elle déduit du CV.
+    asked = before["goal"] if before["search_set"] or not before["goal_is_default"] else "non précisé, à déduire du CV"
     try:
         key, own, _ = quota.grant(u, "cv")
-        analysis = await ai.analyse_cv(cvstore.block(u, each=4000), scoring.user_criteria(u)["goal"], key)
+        analysis = await ai.analyse_cv(cvstore.block(u, each=4000), asked, key)
     except Exception as e:
         return str(e)
     quota.record(u, "cv", 1, own)
     cvstore.get(u)["analysis"] = analysis
     accounts.save_profile(u)
     u["settings"]["profile_keywords"] = _clean_list([str(k).lower() for k in analysis.get("mots_cles", [])], 40, 30)
+    # Personne qui n'a encore rien réglé : ses domaines et sa phrase viennent de son CV, pas des valeurs par défaut
+    # du site. Dès qu'elle a choisi elle-même (ou après cette première fois), on ne touche plus à rien.
+    if not before["search_set"]:
+        found = domains.clean(analysis.get("domaines"))[:3]
+        if found:
+            u["settings"]["domains"] = found
+            u["settings"].setdefault("regions", list(domains.DEFAULT_REGIONS))
+    if before["goal_is_default"]:
+        goal = re.sub(r"\s+", " ", str(analysis.get("objectif") or "")).strip()[:300]
+        if len(goal) > 15:
+            u["settings"]["goal"] = goal
     accounts.save_settings(u)
     return ""
 

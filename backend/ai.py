@@ -9,6 +9,8 @@ import time
 
 import httpx
 
+import domains as dom
+
 # Essayés dans l'ordre si le modèle demandé n'existe plus (Google en retire régulièrement).
 FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite"]
 _working = {"model": None}
@@ -109,6 +111,7 @@ async def check_key(key: str) -> None:
 
 
 async def analyse_cv(cv_text: str, goal: str, key: str) -> dict:
+    domain_list = " ; ".join(f"{k} = {v['label']}" for k, v in dom.DOMAINS.items())
     prompt = (
         "Voici le ou les CV d'une même personne (une version par domaine visé). "
         f"Ce qu'elle cherche : {goal}\n"
@@ -119,7 +122,10 @@ async def analyse_cv(cv_text: str, goal: str, key: str) -> dict:
         '- "points_faibles" : liste de 4 éléments maximum (manques par rapport au marché visé)\n'
         '- "mots_cles" : 15 à 25 mots-clés courts présents dans le CV (technologies, outils, méthodes, domaines), en minuscules\n'
         '- "postes_cibles" : 6 intitulés de poste réalistes pour ce profil\n'
-        '- "conseils_cv" : 5 améliorations concrètes du CV\n\n'
+        '- "conseils_cv" : 5 améliorations concrètes du CV\n'
+        f'- "domaines" : 1 à 3 codes parmi cette liste, ceux qui correspondent le mieux au CV : {domain_list}\n'
+        '- "objectif" : une phrase à la première personne qui résume le stage recherché d\'après le CV '
+        '(type de poste et 3 ou 4 spécialités), sans ville, sans date et sans nom de personne\n\n'
         f"CV :\n{cv_text[:12000]}")
     data = _loads(await generate(prompt, key, as_json=True))
     if not isinstance(data, dict):
