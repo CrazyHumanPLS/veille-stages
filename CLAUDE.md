@@ -35,8 +35,7 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
 - **Alertes par personne** : webhook Discord personnel (conseillé), sujet ntfy, ou Telegram si le site a un bot.
 - **Comptes** : e-mail + mot de passe (scrypt), jeton signé 30 jours, pas d'envoi d'e-mail. Mot de passe oublié :
   l'administrateur en crée un provisoire. Le premier compte (ou celui de `ADMIN_EMAIL`) est administrateur.
-- **Périmètre de la collecte inchangé** : stages en Île-de-France, sources et mots-clés orientés informatique,
-  réseaux, cybersécurité, cloud. Chaque inscrit ajuste ses mots-clés et son objectif.
+- **Périmètre de la collecte** : stages uniquement, toute la France, six domaines (voir « Élargissement » plus bas).
 - Comptes inactifs depuis 21 jours : veille en pause. 300 inscrits maximum par défaut.
 
 ## Architecture
@@ -95,7 +94,17 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   administrateur lié à `ADMIN_EMAIL` n'est donné qu'à la confirmation). Mot de passe oublié : lien valable une heure,
   à usage unique (`/api/password/forgot`, `/api/password/reset`). Liens du type `/#verify=…` et `/#reset=…`.
   Sans ces variables, rien ne change. Jamais testé avec un vrai compte Brevo au moment de l'écriture.
-- 9 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
+- Élargissement (06/10, 20 h) : le stock commun couvre **toute la France** et **six domaines** (`backend/domains.py` :
+  réseaux-cyber-cloud, embarqué-électronique, développement, data-IA, industrie-mécanique, gestion). Chaque inscrit
+  coche ses domaines et ses régions (Réglages → 1. Ma recherche ; réglages `domains` et `regions`, liste de régions
+  vide = toute la France). Sans choix : réseaux + Île-de-France, donc rien ne change pour les comptes existants.
+  Le domaine « reseaux » garde les mots-clés de l'onglet Administration ; les autres sont dans `domains.py`.
+  Adzuna n'est interrogé que pour les domaines cochés par au moins un compte actif, sur toute la France, avec un
+  intervalle qui s'allonge quand il y a plus de requêtes (`ADZUNA_CALLS_PER_DAY`, 96 par défaut).
+  Limites connues : toujours des stages uniquement (pas d'alternance) ; une petite ville française absente des
+  listes de `domains.py` n'est reconnue que par son numéro de département ; les pages carrières listées dans
+  `companies.json` restent surtout des entreprises du numérique.
+- 10 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.
 

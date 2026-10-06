@@ -51,7 +51,7 @@ function Terms({ info }) {
   return (<div className="card privacy">
     <h3>Conditions d'utilisation</h3>
     <ul>
-      <li><b>Le service :</b> {info?.name || "Veille Stages"} collecte des offres de stage publiées sur des sites d'entreprises et des agrégateurs, les trie selon ton profil et t'aide à préparer tes candidatures.</li>
+      <li><b>Le service :</b> {info?.name || "Veille Stages"} collecte des offres de stage en France publiées sur des sites d'entreprises et des agrégateurs, les trie selon ton profil et t'aide à préparer tes candidatures.</li>
       <li><b>Ton compte :</b> une personne, un compte. Tu es responsable de ton mot de passe et de l'exactitude de ce que tu importes. Un compte utilisé pour surcharger le service ou nuire à d'autres personnes peut être désactivé.</li>
       <li><b>Les offres :</b> elles appartiennent aux entreprises qui les publient. Une offre peut être expirée, modifiée ou erronée : vérifie toujours sur le site de l'entreprise avant de postuler.</li>
       <li><b>L'intelligence artificielle :</b> les notes, analyses et lettres sont produites automatiquement. Elles peuvent contenir des erreurs : relis toujours un texte avant de l'envoyer. Le service ne garantit ni entretien ni embauche.</li>
@@ -95,15 +95,17 @@ function Unverified({ me }) {
 // Premiers pas : deux réglages à faire une fois, dans l'ordre.
 function Start({ me, go }) {
   const alerts = me.alerts.discord || me.alerts.ntfy || me.alerts.telegram;
-  if (me.cv && alerts) return null;
+  const chosen = me.settings?.search_set;
+  if (me.cv && alerts && chosen) return null;
   const steps = [
+    [!!chosen, "Choisis ton domaine et ta région", "Réseaux, embarqué, développement, data, industrie, gestion : partout en France ou dans tes régions.", "settings", "Régler ma recherche"],
     [!!me.cv, "Importe ton CV", "Un PDF suffit. Chaque offre est ensuite notée d'après ton profil.", "profile", "Importer mon CV"],
     [!!alerts, "Branche tes alertes", "Les bonnes offres arrivent sur ton téléphone dès leur mise en ligne.", "settings", "Brancher mes alertes"],
   ];
   return (<section className="start">
-    <h2>Bienvenue{me.name ? ` ${me.name}` : ""}. Deux réglages et c'est parti.</h2>
+    <h2>Bienvenue{me.name ? ` ${me.name}` : ""}. Trois réglages et c'est parti.</h2>
     <ol>{steps.map(([done, title, text, tab, label]) => (
-      <li key={tab} className={done ? "done" : ""}>
+      <li key={label} className={done ? "done" : ""}>
         <div><b>{title}</b><span>{text}</span></div>
         {done ? <em>Fait</em> : <button className="btn" onClick={() => go(tab)}>{label}</button>}
       </li>))}</ol>
@@ -228,8 +230,8 @@ function Auth({ info, onOk, onCookies }) {
     <section className="steps wrap">
       <h2>Comment ça marche</h2>
       <ol>
-        <li><b>Tu importes ton CV.</b> Un PDF suffit. Si tu vises plusieurs domaines, tu peux en mettre jusqu'à trois.</li>
-        <li><b>On surveille pour toi.</b> Les nouvelles offres de stage en Île-de-France sont collectées toutes les trois minutes et notées de 0 à 100.</li>
+        <li><b>Tu choisis ton domaine et tu importes ton CV.</b> Réseaux, cybersécurité, embarqué, électronique, développement, data, industrie, gestion. Un PDF suffit.</li>
+        <li><b>On surveille pour toi.</b> Les nouvelles offres de stage, partout en France et dans ton domaine, sont collectées en continu et notées de 0 à 100.</li>
         <li><b>Tu reçois une alerte.</b> Dès qu'une offre dépasse ton seuil, elle arrive sur ton téléphone, avec le CV à envoyer.</li>
         <li><b>Tu postules plus vite.</b> Lettre, message au recruteur et préparation d'entretien se rédigent à partir de l'offre et de ton CV.</li>
       </ol>

@@ -22,6 +22,7 @@ import ai  # noqa: E402
 import collector  # noqa: E402
 import cvstore  # noqa: E402
 import db  # noqa: E402
+import domains  # noqa: E402
 import mailer  # noqa: E402
 import notify  # noqa: E402
 import quota  # noqa: E402
@@ -156,7 +157,8 @@ def public():
             "limits": {k: lim[k] for k in quota.LABELS}, "premium_limits": {k: lim["p_" + k] for k in quota.LABELS},
             # Premium : simple lien de paiement (Stripe, PayPal, Lydia…) ; l'administrateur active ensuite le compte.
             "premium": {"url": os.getenv("PREMIUM_URL", ""), "price": os.getenv("PREMIUM_PRICE", "")},
-            "shared_ai": bool(quota.shared_key()), "ga": GA_ID, "mail": mailer.enabled()}
+            "shared_ai": bool(quota.shared_key()), "ga": GA_ID, "mail": mailer.enabled(),
+            "domains": domains.labels(), "regions": domains.region_labels()}
 
 
 # ---------- comptes ----------
@@ -525,8 +527,18 @@ def get_criteria(u: dict = Depends(current)):
 def put_criteria(body: dict, bg: BackgroundTasks, u: dict = Depends(current)):
     throttle(f"crit:{u['id']}", 12, 600, "Trop de modifications d'affilée. Réessaie dans quelques minutes.")
     s = u["settings"]
-    if isinstance(body.get("goal"), str) and body["goal"].strip():
-        s["goal"] = " ".join(body["goal"].split())[:300]
+    before = scoring.user_criteria(u)      # ce qu'il avait à l'écran avant de modifier
+    if isinstance(body.get("domains"), list):
+        s["domains"] = domains.clean(body["domains"]) or list(domains.DEFAULT_DOMAINS)
+    if isinstance(body.get("regions"), list):
+        s["regions"] = domains.clean_regions(body["regions"])        # liste vide = toute la France
+    if isinstance(body.get("goal"), str):
+        # phrase vide, ou restée identique à la phrase proposée : on la laisse suivre les domaines et les régions
+        goal = " ".join(body["goal"].split())[:300]
+        if not goal or (before["goal_is_default"] and goal == before["goal"]):
+            s.pop("goal", None)
+        else:
+            s["goal"] = goal
     for k in ("min_kw", "notify_ai", "notify_kw", "ai_min_kw"):
         if isinstance(body.get(k), (int, float)):
             s[k] = max(0, min(100, int(body[k])))
@@ -535,8 +547,8 @@ def put_criteria(body: dict, bg: BackgroundTasks, u: dict = Depends(current)):
     for k in scoring.USER_LISTS:
         if isinstance(body.get(k), list):
             mine = _clean_list(body[k])
-            if mine == scoring.criteria()[k]:
-                s.pop(k, None)      # identique à la liste du site : il continue de suivre ses mises à jour
+            if k not in before["custom_lists"] and mine == _clean_list(before[k]):
+                s.pop(k, None)      # il n'y a pas touché : ses listes continuent de suivre ses domaines
             else:
                 s[k] = mine
     if body.get("reset_lists"):
@@ -926,6 +938,22 @@ def admin_delete_user(uid: int, me: dict = Depends(admin)):
     _target(uid, me)
     accounts.remove(uid)
     return {"ok": True}
+
+
+@app.post("/api/admin/mail/test")
+async def admin_mail_test(me: dict = Depends(admin)):
+    """Envoie un e-mail de test à l'administrateur et renvoie la réponse exacte du service en cas de refus."""
+    throttle(f"mailtest:{me['id']}", 6, 600, "Trop de tests d'affilée. Réessaie dans quelques minutes.")
+    if not mailer.enabled():
+        raise HTTPException(400, "L'envoi d'e-mails n'est pas configuré : il faut BREVO_API_KEY et MAIL_FROM "
+                                 "(une adresse e-mail valide) dans Render, onglet Environment.")
+    try:
+        await mailer.send(me["email"], f"Test d'envoi depuis {APP_NAME}",
+                          ["Si tu lis ce message, l'envoi d'e-mails fonctionne.",
+                           "S'il est arrivé dans tes indésirables, tes inscrits le trouveront là aussi."])
+    except Exception as e:
+        raise HTTPException(502, {"error": str(e), "help": mailer.explain(str(e))})
+    return {"to": me["email"], "from": mailer.sender()}
 
 
 @app.post("/api/admin/collect")

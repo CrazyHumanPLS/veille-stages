@@ -12,7 +12,7 @@ function Alerts({ me, setMe }) {
   const save = body => act("Enregistrement…", async () => { await setMe(await put("/api/me/alerts", body)); setDiscord(""); return "Enregistré. Clique « Envoyer un test » pour vérifier."; });
   const any = a.discord || a.ntfy || a.telegram;
   return (<>
-    <h3>1. Mes alertes</h3>
+    <h3>2. Mes alertes</h3>
     <p className="mute">Dès qu'une offre dépasse ton seuil, tu reçois une notification sur ton téléphone. Chacun branche son propre canal : un seul suffit. Sans canal, tout reste consultable sur le site.</p>
     {msg && <p className="note">{msg}</p>}
     {a.error && <p className="err">Dernier envoi en échec : {a.error}</p>}
@@ -80,7 +80,7 @@ function AiKey({ me, setMe }) {
   const { msg, busy, act } = useAction();
   const names = { score: "Offres notées d'après ton CV", assist: "Lettres, analyses et messages", cv: "Analyses de CV" };
   return (<>
-    <h3>2. Intelligence artificielle</h3>
+    <h3>3. Intelligence artificielle</h3>
     {msg && <p className="note">{msg}</p>}
     {ai.error && <p className="err">Dernière erreur de l'IA : {ai.error}</p>}
     <div className="card">
@@ -107,7 +107,7 @@ function AiKey({ me, setMe }) {
   </>);
 }
 
-function Search({ reloadMe }) {
+function Search({ reloadMe, info }) {
   const [crit, setCrit] = useState(null);
   const { msg, busy, act } = useAction();
   useEffect(() => { api("/api/criteria").then(setCrit).catch(() => {}); }, []);
@@ -115,13 +115,26 @@ function Search({ reloadMe }) {
   const lines = k => ({ value: (crit[k] || []).join("\n"), onChange: e => setCrit({ ...crit, [k]: e.target.value.split("\n") }) });
   const num = k => ({ type: "number", min: 0, max: 100, value: crit[k], onChange: e => setCrit({ ...crit, [k]: +e.target.value }) });
   const save = extra => act("Enregistrement…", async () => { setCrit(await put("/api/criteria", { ...crit, ...extra })); reloadMe(); return "Enregistré. Tes offres sont retriées avec ces réglages (une minute environ)."; });
+  const toggle = (k, v) => setCrit({ ...crit, [k]: crit[k].includes(v) ? crit[k].filter(x => x !== v) : [...crit[k], v] });
+  const doms = Object.entries(info?.domains || {}), regs = Object.entries(info?.regions || {});
   return (<>
-    <h3>3. Ma recherche</h3>
+    <h3>1. Ma recherche</h3>
     {msg && <p className="note">{msg}</p>}
     <div className="card">
-      <label className="block">Ce que je cherche (l'IA s'en sert pour noter les offres et écrire tes lettres)
+      <fieldset className="choices">
+        <legend>Mes domaines</legend>
+        {doms.map(([k, l]) => <label key={k} className={crit.domains.includes(k) ? "on" : ""}><input type="checkbox" checked={crit.domains.includes(k)} onChange={() => toggle("domains", k)} />{l}</label>)}
+      </fieldset>
+      {!crit.domains.length && <p className="err">Coche au moins un domaine.</p>}
+      <fieldset className="choices">
+        <legend>Mes régions</legend>
+        <label className={!crit.regions.length ? "on" : ""}><input type="checkbox" checked={!crit.regions.length} onChange={() => setCrit({ ...crit, regions: [] })} />Toute la France</label>
+        {regs.map(([k, l]) => <label key={k} className={crit.regions.includes(k) ? "on" : ""}><input type="checkbox" checked={crit.regions.includes(k)} onChange={() => toggle("regions", k)} />{l}</label>)}
+      </fieldset>
+      <p className="mute">Les offres en télétravail ou sans lieu précisé te sont proposées quelles que soient tes régions.</p>
+      <label className="block">Précise ce que tu cherches (l'IA s'en sert pour noter les offres et écrire tes lettres)
         <textarea value={crit.goal} maxLength={300} onChange={e => setCrit({ ...crit, goal: e.target.value })} style={{ minHeight: 60 }} /></label>
-      <p className="mute">Exemple : « Stage de fin d'études de 6 mois à partir de mars 2027, en Île-de-France, en cybersécurité ou réseaux ».</p>
+      <p className="mute">Plus c'est précis, mieux l'IA note. Exemple : « Stage de fin d'études de 6 mois à partir de mars 2027, en logiciel embarqué ou FPGA, à Toulouse ou en Île-de-France ». Laisse vide pour une phrase automatique d'après tes choix.</p>
       <div className="row">
         <label>M'alerter si le score de l'IA atteint <input {...num("notify_ai")} /></label>
         <label>Sans IA, si le score par mots-clés atteint <input {...num("notify_kw")} /></label>
@@ -129,16 +142,16 @@ function Search({ reloadMe }) {
         <label>Faire noter par l'IA à partir de <input {...num("ai_min_kw")} /></label>
       </div>
       <p className="mute">Ces deux derniers seuils portent sur le score par mots-clés. Sous le seuil de l'IA, une offre reste affichée avec son score par mots-clés mais n'est pas envoyée à l'IA : ça économise ton quota.</p>
-      <details><summary className="mute">Mots-clés (réglage avancé){crit.custom_lists?.length ? " : listes personnalisées" : " : listes du site"}</summary>
+      <details><summary className="mute">Mots-clés (réglage avancé){crit.custom_lists?.length ? " : listes personnalisées" : " : listes de tes domaines"}</summary>
         <div className="cols">
           <div><h4>Mots-clés forts (un par ligne)</h4><textarea {...lines("strong")} /></div>
           <div><h4>Technologies et outils (un par ligne)</h4><textarea {...lines("tech")} /></div>
           <div><h4>Mots tirés de ton CV (remplis par l'analyse)</h4><textarea {...lines("profile_keywords")} /></div>
           <div><h4>Mots à pénaliser dans le titre</h4><textarea {...lines("negative")} /></div>
         </div>
-        {crit.custom_lists?.length > 0 && <button className="btn ghost" disabled={busy} onClick={() => save({ reset_lists: true, strong: undefined, tech: undefined, negative: undefined })}>Revenir aux listes du site</button>}
+        {crit.custom_lists?.length > 0 && <button className="btn ghost" disabled={busy} onClick={() => save({ reset_lists: true, strong: undefined, tech: undefined, negative: undefined })}>Revenir aux listes de mes domaines</button>}
       </details>
-      <button className="btn" disabled={busy} onClick={() => save()}>Enregistrer ma recherche</button>
+      <button className="btn" disabled={busy || !crit.domains.length} onClick={() => save()}>Enregistrer ma recherche</button>
     </div>
   </>);
 }
@@ -180,10 +193,10 @@ function Account({ me, setMe, onGone }) {
 
 export default function Settings({ me, setMe, reloadMe, onGone, info }) {
   return (<>
+    <Search reloadMe={reloadMe} info={info} />
     <Alerts me={me} setMe={setMe} />
     <AiKey me={me} setMe={setMe} />
     <Premium me={me} info={info} />
-    <Search reloadMe={reloadMe} />
     <Account me={me} setMe={setMe} onGone={onGone} />
   </>);
 }

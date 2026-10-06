@@ -23,7 +23,8 @@ export async function api(path, opts = {}) {
   if (r.status === 401 && !open) { onLogout(); throw new Error("Session expirée, reconnecte-toi."); }
   if (!r.ok) {
     const e = await r.json().catch(() => ({}));
-    throw new Error(typeof e.detail === "string" ? e.detail : `Erreur ${r.status}`);
+    const d = e.detail;
+    throw new Error(typeof d === "string" ? d : d?.error ? [d.error, d.help].filter(Boolean).join(" → ") : `Erreur ${r.status}`);
   }
   return r.json();
 }

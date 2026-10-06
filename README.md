@@ -7,7 +7,8 @@ pour tout le monde. Tout reste gratuit.
 ## Comment ça marche
 
 1. **Collecte commune.** Toutes les 3 minutes, le site interroge les pages carrières de `backend/companies.json`,
-   Adzuna et les flux RSS, garde les stages en Île-de-France et supprime les doublons. Ce stock est partagé :
+   Adzuna et les flux RSS, garde les stages en France dans six domaines (réseaux et cybersécurité, embarqué et
+   électronique, développement, data, industrie, gestion) et supprime les doublons. Chacun choisit ses domaines et ses régions. Ce stock est partagé :
    10 ou 200 inscrits coûtent la même chose en collecte.
 2. **Tri personnel.** Pour chaque inscrit, le site trie le stock avec ses mots-clés, puis l'IA note les
    nouveautés de 0 à 100 d'après son CV et indique quel CV envoyer.

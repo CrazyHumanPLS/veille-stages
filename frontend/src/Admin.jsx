@@ -5,6 +5,7 @@ export default function Admin({ me }) {
   const [ov, setOv] = useState(null);
   const [set, setSet] = useState(null);
   const [temp, setTemp] = useState(null);
+  const [mail, setMail] = useState("");
   const { msg, busy, act } = useAction();
   const load = useCallback(() => { api("/api/admin/overview").then(setOv).catch(() => {}); }, []);
   useEffect(() => { load(); api("/api/admin/settings").then(setSet).catch(() => {}); }, [load]);
@@ -79,7 +80,16 @@ export default function Admin({ me }) {
     </div>
 
     <h3>Branchements du site</h3>
-    <div className="card">{checks.map(([l, ok]) => <div key={l}><Dot ok={ok} /> {l}</div>)}</div>
+    <div className="card">{checks.map(([l, ok]) => <div key={l}><Dot ok={ok} /> {l}</div>)}
+      <div className="row" style={{ marginTop: 12 }}>
+        <button className="btn ghost" disabled={busy} onClick={async () => {
+          setMail("Envoi en cours…");
+          try { const r = await post("/api/admin/mail/test"); setMail(`Brevo a accepté l'e-mail, envoyé à ${r.to} depuis ${r.from}. S'il n'arrive pas d'ici deux minutes, regarde tes indésirables, puis le journal « Transactionnel » de Brevo.`); }
+          catch (e) { setMail("Échec : " + e.message); }
+        }}>Envoyer un e-mail de test</button>
+      </div>
+      {mail && <p className={mail.startsWith("Échec") ? "err" : "note"} style={{ marginBottom: 0 }}>{mail}</p>}
+    </div>
 
     <h3>État des sources</h3>
     <div className="card scroll"><table>

@@ -20,6 +20,7 @@ import accounts
 import ai
 import cvstore as prof
 import db
+import domains as dom
 import notify
 import quota
 import scoring
@@ -27,6 +28,7 @@ import sources
 
 # Délai minimum entre deux interrogations d'une même source (minutes)
 EVERY = {"ft": 3, "adzuna": 120, "ats": 15, "rss": 15}
+ADZUNA_CALLS_PER_DAY = int(os.getenv("ADZUNA_CALLS_PER_DAY", "96"))   # budget du compte gratuit, réparti sur la journée
 MAX_ALERTS_PER_RUN = 10      # au-delà : un message récapitulatif
 LOCK_SECONDS = 240
 DIGEST_ABOVE = 5             # au-delà de 5 bonnes offres d'un coup : un récapitulatif au lieu d'une alerte chacune
@@ -56,8 +58,8 @@ def keep(raw: dict, crit: dict) -> dict | None:
         return None   # pas de titre, ou lien qui n'est pas une adresse web (jamais de « javascript: »)
     if not scoring.is_internship(raw["title"], raw["description"]):
         return None
-    if not raw["geo_ok"] and not scoring.is_idf(raw["place"]):
-        return None
+    if not raw["geo_ok"] and not dom.in_france(raw["place"]):
+        return None   # le stock commun couvre toute la France ; chacun filtre ensuite sur ses régions
     score = scoring.kw_score(raw["title"], raw["description"], crit)
     if score < crit["min_kw"]:
         return None
@@ -141,15 +143,27 @@ async def _run_source(name: str, coro, crit: dict, distinct: bool = False) -> in
         return 0
 
 
+def domains_in_use() -> list[str]:
+    """Domaines cochés par au moins un compte actif : on n'interroge Adzuna que pour ceux-là."""
+    used = set()
+    for u in accounts.active(INACTIVE_DAYS):
+        used.update(dom.clean((u["settings"] or {}).get("domains")) or dom.DEFAULT_DOMAINS)
+    return [k for k in dom.DOMAINS if k in (used or set(dom.DEFAULT_DOMAINS))]
+
+
 async def collect(force: bool = False) -> int:
-    crit = scoring.criteria()
+    site = scoring.criteria()
+    crit = scoring.pool_criteria(site)
+    queries = scoring._merge(*(scoring.domain_lists(k, site)["adzuna"] for k in domains_in_use()))
+    # Plus il y a de requêtes, plus on espace les passages, pour rester dans le budget quotidien d'Adzuna.
+    adzuna_every = max(EVERY["adzuna"], 1440 * len(queries) / max(1, ADZUNA_CALLS_PER_DAY))
     load_seen()
     jobs = []
     async with httpx.AsyncClient(timeout=30, headers=sources.UA, follow_redirects=True) as h:
         if sources.ft_enabled() and _due("France Travail", EVERY["ft"], force):
             jobs.append(_run_source("France Travail", sources.france_travail(h, crit), crit))
-        if sources.adzuna_enabled() and _due("Adzuna", EVERY["adzuna"], force):
-            jobs.append(_run_source("Adzuna", sources.adzuna(h, crit), crit))
+        if sources.adzuna_enabled() and queries and _due("Adzuna", adzuna_every, force):
+            jobs.append(_run_source("Adzuna", sources.adzuna(h, queries), crit))
         for kind, fetch in sources.ATS.items():
             for c in sources.companies().get(kind, []):
                 if _due(c["name"], EVERY["ats"], force):
@@ -193,7 +207,7 @@ def sync_user(u: dict, full: bool = False, site: dict | None = None) -> int:
     since = oldest if full or not u["cursor"] else max(oldest, u["cursor"] - 600)
     o, uo = db.offers, db.user_offers
     with db.engine.connect() as c:
-        pool = c.execute(select(o.c.id, o.c.company, o.c.title, o.c.description, o.c.first_seen)
+        pool = c.execute(select(o.c.id, o.c.company, o.c.title, o.c.description, o.c.first_seen, o.c.place)
                          .where(o.c.first_seen > since)).all()
         mine = {r.offer_id: r for r in c.execute(
             select(uo.c.offer_id, uo.c.state, uo.c.ai_score, uo.c.kw_score).where(uo.c.user_id == uid))}
@@ -204,14 +218,15 @@ def sync_user(u: dict, full: bool = False, site: dict | None = None) -> int:
         have = mine.get(r.id)
         if have and not full:
             continue
+        here = dom.place_ok(r.place, crit["regions"])
         score = scoring.kw_score(r.title, r.description, crit)
         if have:
-            if score < crit["min_kw"] and have.state == "new" and have.ai_score is None:
-                drop.append(r.id)
+            if have.state == "new" and (not here or (score < crit["min_kw"] and have.ai_score is None)):
+                drop.append(r.id)     # hors de ses régions, ou plus assez proche de ses mots-clés
             elif score != have.kw_score:
                 change.append((r.id, score))
             continue
-        if score < crit["min_kw"]:
+        if not here or score < crit["min_kw"]:
             continue
         note = ""
         key = scoring.company_key(r.company or "")

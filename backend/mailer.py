@@ -61,9 +61,32 @@ async def send(to: str, subject: str, lines: list[str], button: tuple[str, str] 
             if r.status_code in (200, 201, 202):
                 _sent.append(now)
                 return
-            last = f"service d'e-mails : réponse {r.status_code}"
+            try:
+                why = str(r.json().get("message") or "")[:200]
+            except ValueError:
+                why = r.text[:200]
+            last = f"Brevo a refusé l'envoi (réponse {r.status_code}) : {why or 'sans explication'}"
             if r.status_code not in (429, 500, 502, 503, 504):
-                print("e-mail refusé :", r.status_code, r.text[:200])   # ni l'adresse du destinataire ni le contenu
+                print("e-mail refusé :", r.status_code, why)   # ni l'adresse du destinataire ni le contenu
                 break
         await asyncio.sleep(1 + 2 * attempt if os.getenv("AI_BACKOFF_SEC", "1") != "0" else 0)
     raise RuntimeError(last)
+
+
+def explain(error: str) -> str:
+    """Traduit les refus les plus fréquents de Brevo en une consigne claire pour l'administrateur."""
+    e = error.lower()
+    if "unrecognised ip" in e or "unrecognized ip" in e or "authorised ip" in e or "authorized ip" in e:
+        return ("Brevo bloque les adresses de connexion inconnues. Dans Brevo : menu du compte → Sécurité → "
+                "IP autorisées, puis désactive le blocage des adresses IP inconnues.")
+    if "key not found" in e or "unauthorized" in e or "(réponse 401)" in e:
+        return ("La clé n'est pas reconnue. Dans Brevo : SMTP et API → Clés API. Il faut la clé qui commence par "
+                "« xkeysib- » (pas « xsmtpsib- »), copiée en entier dans BREVO_API_KEY, sans espace.")
+    if "sender" in e and ("not valid" in e or "invalid" in e or "not found" in e or "validate" in e):
+        return "L'adresse MAIL_FROM n'est pas un expéditeur validé dans Brevo (Expéditeurs, domaines et IP dédiées → Expéditeurs)."
+    if "not yet activated" in e or "not enabled" in e or "activate" in e or "suspended" in e or "(réponse 403)" in e:
+        return ("Ton compte Brevo n'est pas encore autorisé à envoyer des e-mails transactionnels. Ouvre Brevo : "
+                "un bandeau ou la page Transactionnel indique quoi compléter, ou écris à leur support.")
+    if "connexion" in e:
+        return "Le site n'arrive pas à joindre Brevo. Réessaie dans quelques minutes."
+    return ""

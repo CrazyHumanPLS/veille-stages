@@ -3,6 +3,7 @@
 geo_ok=True quand la source a déjà filtré sur l'Île-de-France.
 Uniquement des API officielles ou des flux publics prévus pour être lus par des programmes.
 """
+import asyncio
 import json
 import os
 import pathlib
@@ -17,6 +18,7 @@ from scoring import strip_html
 
 UA = {"User-Agent": "veille-stages/1.0 (veille d'offres de stage)"}
 HERE = pathlib.Path(__file__).parent
+ADZUNA_PAUSE = float(os.getenv("ADZUNA_PAUSE_SEC", "2.5"))
 
 
 def companies() -> dict:
@@ -62,7 +64,7 @@ def _ft_map(o: dict) -> dict:
                   o.get("description", ""), o.get("dateCreation", ""), geo_ok=True)
 
 
-async def ft_search(h: httpx.AsyncClient, mots: str, region: str = "11", departement: str = "",
+async def ft_search(h: httpx.AsyncClient, mots: str, region: str = "", departement: str = "",
                     days: int | None = 3, limit: int = 50) -> list[dict]:
     params = {"motsCles": mots, "range": f"0-{limit - 1}", "sort": "1"}
     if days:
@@ -97,13 +99,15 @@ def adzuna_enabled() -> bool:
     return bool(os.getenv("ADZUNA_APP_ID") and os.getenv("ADZUNA_APP_KEY"))
 
 
-async def adzuna(h: httpx.AsyncClient, crit: dict) -> list[dict]:
-    # Une requête par couple de mots, tous obligatoires (ex. "stage cybersécurité").
+async def adzuna(h: httpx.AsyncClient, queries: list[str]) -> list[dict]:
+    # Une requête par couple de mots, tous obligatoires (ex. "stage cybersécurité"), sur toute la France.
     results, errors = [], []
-    for q in crit["adzuna_queries"]:
+    for i, q in enumerate(queries):
+        if i:
+            await asyncio.sleep(ADZUNA_PAUSE)   # Adzuna limite le nombre de demandes par minute
         r = await h.get("https://api.adzuna.com/v1/api/jobs/fr/search/1", params={
             "app_id": os.getenv("ADZUNA_APP_ID"), "app_key": os.getenv("ADZUNA_APP_KEY"),
-            "what_and": q, "what_exclude": "alternance apprentissage", "where": "Île-de-France",
+            "what_and": q, "what_exclude": "alternance apprentissage",
             "sort_by": "date", "max_days_old": 10, "results_per_page": 50, "content-type": "application/json"})
         if r.status_code != 200:
             errors.append(f"Adzuna {r.status_code} : {r.text[:150]}")

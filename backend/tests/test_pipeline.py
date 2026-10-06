@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 os.environ.update(DATABASE_URL="sqlite:///" + tempfile.mkdtemp() + "/t.db", COLLECT_EVERY_SEC="0",
                   FT_CLIENT_ID="x", FT_CLIENT_SECRET="x", GEMINI_API_KEY="cle-commune", TELEGRAM_TOKEN="bot",
                   SECRET_KEY="secret-de-test", CRON_KEY="k", ADZUNA_APP_ID="", ADZUNA_APP_KEY="",
-                  AI_BACKOFF_SEC="0", ADMIN_EMAIL="chef@ex.fr", SIGNUP_MODE="open", APP_URL="https://site.test")
+                  AI_BACKOFF_SEC="0", ADZUNA_PAUSE_SEC="0", ADMIN_EMAIL="chef@ex.fr", SIGNUP_MODE="open", APP_URL="https://site.test")
 
 import accounts, collector, db, quota, scoring, security  # noqa: E402
 
@@ -40,6 +40,14 @@ ntfy, telegram, gemini_keys, extra_ft = [], [], [], []
 tg_updates = []
 gemini_fail = {"on": False}
 mails, mail_fail = [], {"on": False}
+adzuna_calls = []
+ADZUNA = {"stage embarqué": [
+    {"id": "E1", "title": "Stage ingénieur logiciel embarqué C / STM32 (H/F)", "company": {"display_name": "Aero Systèmes"},
+     "location": {"display_name": "Toulouse, Haute-Garonne"}, "redirect_url": "https://adz/e1", "created": "2026-10-05T08:00:00Z",
+     "description": "Stage de fin d'études. Développement C embarqué sur microcontrôleur STM32, RTOS, tests et validation."},
+    {"id": "E2", "title": "Stage FPGA VHDL - électronique numérique", "company": {"display_name": "Onde Défense"},
+     "location": {"display_name": "Élancourt, Yvelines"}, "redirect_url": "https://adz/e2", "created": "2026-10-05T08:00:00Z",
+     "description": "Stage ingénieur. Conception FPGA en VHDL, Vivado, bancs de test, CEM."}]}
 
 
 def handler(req: httpx.Request) -> httpx.Response:
@@ -65,6 +73,10 @@ def handler(req: httpx.Request) -> httpx.Response:
         cv = "cv2" if "[CV cv2" in prompt else "cv1"
         return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": json.dumps(
             [{"id": i, "score": 85, "cv": cv, "raison": "Très proche du profil"} for i in ids])}]}}]})
+    if "api.adzuna.com" in u:
+        q = req.url.params.get("what_and")
+        adzuna_calls.append({"q": q, "where": req.url.params.get("where")})
+        return httpx.Response(200, json={"results": ADZUNA.get(q, [])})
     if "api.brevo.com" in u:
         if mail_fail["on"]:
             return httpx.Response(401, json={"message": "Key not found"})
@@ -582,7 +594,7 @@ def test_emails(monkeypatch):
         assert r.status_code == 200 and r.json()["me"]["email"] == "nouvelle@ex.fr"
         assert c.get("/api/me", headers=h).status_code == 401                         # l'ancienne connexion est fermée
         assert c.post("/api/password/reset", json={"token": tok, "new": "motdepasse3"}).status_code == 400   # lien à usage unique
-        assert c.post("/api/login", json={"email": "nouvelle@ex.fr", "password": "motdepasse2"}).status_code == 200
+        h2 = {"Authorization": "Bearer " + c.post("/api/login", json={"email": "nouvelle@ex.fr", "password": "motdepasse2"}).json()["token"]}
         assert c.post("/api/login", json={"email": "nouvelle@ex.fr", "password": "motdepasse1"}).status_code == 401
         # pas plus de 3 demandes par heure pour une même adresse
         for _ in range(4):
@@ -595,8 +607,67 @@ def test_emails(monkeypatch):
         assert r["me"]["is_admin"] is False
         assert c.post("/api/verify", json={"token": link(mails[-1], "verify")}).json()["ok"]
         assert c.get("/api/me", headers={"Authorization": "Bearer " + r["token"]}).json()["is_admin"] is True
+        # test d'envoi réservé à l'administrateur, avec la raison exacte en cas de refus
+        boss = {"Authorization": "Bearer " + r["token"]}
+        ok = c.post("/api/admin/mail/test", headers=boss).json()
+        assert ok == {"to": "chef@ex.fr", "from": "bonjour@site.test"} and "Test d'envoi" in mails[-1]["subject"]
+        assert c.post("/api/admin/mail/test", headers=h2).status_code == 403
+        mail_fail["on"] = True
+        bad = c.post("/api/admin/mail/test", headers=boss)
+        assert bad.status_code == 502 and "Key not found" in bad.json()["detail"]["error"] and "xkeysib" in bad.json()["detail"]["help"]
+        mail_fail["on"] = False
         # 5) service d'e-mails en panne : l'inscription marche quand même
         mail_fail["on"] = True
         assert c.post("/api/signup", json={"email": "panne@ex.fr", "password": "motdepasse1", "consent": True}).status_code == 200
         mail_fail["on"] = False
     main._hits.clear(); mails.clear()
+
+
+def test_domains_and_regions(monkeypatch):
+    """Autres domaines et autres régions : chacun ne voit que ce qui correspond à ses choix."""
+    import domains, sources
+    from fastapi.testclient import TestClient
+    import main
+    main._hits.clear()
+    assert domains.regions_of("Toulouse, Haute-Garonne") == ["occ"] and domains.regions_of("92 - Châtillon") == ["idf"]
+    assert domains.in_france("Lyon, France") and not domains.in_france("New York, USA") and domains.in_france("")
+    assert domains.place_ok("Toulouse (31)", ["occ"]) and not domains.place_ok("Toulouse (31)", ["idf"])
+    assert domains.place_ok("Toulouse (31)", []) and domains.place_ok("", ["idf"]) and domains.place_ok("France", ["bre"])
+    site = scoring.criteria()
+    emb = scoring.user_criteria({"settings": {"domains": ["embarque"], "regions": ["occ"]}}, site)
+    assert "fpga" in emb["strong"] and "cisco" not in emb["tech"] and emb["search_set"] and "Occitanie" in emb["goal"]
+    old = scoring.user_criteria({"settings": {}}, site)                      # compte d'avant : rien ne change pour lui
+    assert old["domains"] == ["reseaux"] and old["regions"] == ["idf"] and old["strong"] == site["strong"] and not old["search_set"]
+    mix = scoring.user_criteria({"settings": {"domains": ["reseaux", "gestion"]}}, site)
+    assert "marketing" in mix["strong"] and "marketing" not in mix["negative"]   # recherché d'un côté : plus pénalisé de l'autre
+
+    with TestClient(main.app) as c:
+        mk = lambda mail: c.post("/api/signup", json={"email": mail, "password": "motdepasse1", "consent": True}).json()
+        sarah, paul = mk("sarah@ex.fr"), mk("paul@ex.fr")
+        hs = {"Authorization": "Bearer " + sarah["token"]}
+        assert set(c.get("/api/public").json()["domains"]) == set(domains.DOMAINS) and "occ" in c.get("/api/public").json()["regions"]
+        got = c.put("/api/criteria", json={**sarah["me"]["settings"], "domains": ["embarque"], "regions": ["occ", "idf"]}, headers=hs).json()
+        assert got["domains"] == ["embarque"] and got["regions"] == ["idf", "occ"] and "fpga" in got["strong"] and not got["custom_lists"]
+        assert got["goal_is_default"] and "embarqués" in got["goal"]             # la phrase suit ses nouveaux choix
+        # Adzuna : interrogé sur toute la France, et seulement pour les domaines que quelqu'un a cochés
+        monkeypatch.setenv("ADZUNA_APP_ID", "x"); monkeypatch.setenv("ADZUNA_APP_KEY", "y")
+        assert set(collector.domains_in_use()) >= {"reseaux", "embarque"} and "gestion" not in collector.domains_in_use()
+        adzuna_calls.clear()
+        run(collector.run_once(force=True))
+        asked = [x["q"] for x in adzuna_calls]
+        assert "stage embarqué" in asked and "stage réseaux" in asked and "stage marketing" not in asked
+        assert all(x["where"] is None for x in adzuna_calls)
+        s_titles, p_titles = set(rows(sarah["me"]["id"])), set(rows(paul["me"]["id"]))
+        assert {"Stage ingénieur logiciel embarqué C / STM32 (H/F)", "Stage FPGA VHDL - électronique numérique"} <= s_titles
+        assert "Stage ingénieur réseaux et sécurité H/F" not in s_titles          # hors de son domaine
+        assert not any("embarqué" in t or "FPGA" in t for t in p_titles)          # Paul (réseaux, Île-de-France) ne les voit pas
+        # elle retire l'Île-de-France : l'offre d'Élancourt quitte sa liste, celle de Toulouse reste
+        c.put("/api/criteria", json={"regions": ["occ"]}, headers=hs)
+        run(collector.resync_one(sarah["me"]["id"]))
+        s_titles = set(rows(sarah["me"]["id"]))
+        assert "Stage ingénieur logiciel embarqué C / STM32 (H/F)" in s_titles and "Stage FPGA VHDL - électronique numérique" not in s_titles
+        # toute la France : les deux reviennent
+        c.put("/api/criteria", json={"regions": []}, headers=hs)
+        run(collector.resync_one(sarah["me"]["id"]))
+        assert "Stage FPGA VHDL - électronique numérique" in set(rows(sarah["me"]["id"]))
+    main._hits.clear()

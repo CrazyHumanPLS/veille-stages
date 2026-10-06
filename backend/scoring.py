@@ -8,6 +8,7 @@ import unicodedata
 from email.utils import parsedate_to_datetime
 
 import db
+import domains as dom
 
 # ---------- réglages communs du site (modifiables depuis l'onglet Administration) ----------
 # Ils décident de ce qui entre dans le stock commun d'offres, et servent de mots-clés par défaut à chacun.
@@ -50,7 +51,7 @@ DEFAULT_CRITERIA = {
 
 # ---------- réglages propres à chaque utilisateur (onglet Réglages) ----------
 USER_DEFAULTS = {
-    "goal": "Stage de fin d'études (bac+5, environ 6 mois) en Île-de-France",
+    "goal": "",               # vide : phrase construite d'après ses domaines et ses régions
     "profile_keywords": [],   # mots tirés automatiquement de son CV (remplis par l'analyse Gemini)
     "min_kw": 25,             # en dessous : l'offre ne lui est pas proposée
     "notify_ai": 60,          # alerte si le score Gemini atteint ce seuil
@@ -69,14 +70,62 @@ def criteria() -> dict:
     return c
 
 
+def _merge(*lists) -> list[str]:
+    seen, out = set(), []
+    for l in lists:
+        for w in l:
+            if norm(w) not in seen:
+                seen.add(norm(w))
+                out.append(w)
+    return out
+
+
+def domain_lists(key: str, site: dict) -> dict:
+    """Mots-clés d'un domaine. « reseaux » lit ceux de l'onglet Administration, les autres sont dans domains.py."""
+    d = dom.DOMAINS[key]
+    if key == "reseaux":
+        return {"strong": site["strong"], "tech": site["tech"], "negative": site["negative"], "adzuna": site["adzuna_queries"]}
+    return {"strong": d["strong"], "tech": d["tech"], "negative": d["negative"], "adzuna": d["adzuna"]}
+
+
+def lists_for(keys: list[str], site: dict) -> dict:
+    """Listes réunies de plusieurs domaines. Un mot pénalisé dans un domaine ne l'est plus s'il est recherché dans un autre."""
+    parts = [domain_lists(k, site) for k in keys]
+    if len(parts) == 1:       # un seul domaine : ses listes telles quelles (les scores existants ne bougent pas)
+        return {k: list(parts[0][k]) for k in USER_LISTS}
+    strong, tech = _merge(*(p["strong"] for p in parts)), _merge(*(p["tech"] for p in parts))
+    wanted = {norm(w) for w in strong}
+    return {"strong": strong, "tech": tech,
+            "negative": [w for w in _merge(*(p["negative"] for p in parts)) if norm(w) not in wanted]}
+
+
+def pool_criteria(site: dict | None = None) -> dict:
+    """Ce qui entre dans le stock commun : toute offre qui touche au moins un domaine, sans pénalité."""
+    site = site or criteria()
+    every = lists_for(list(dom.DOMAINS), site)
+    return {**site, "strong": every["strong"], "tech": every["tech"], "negative": [], "profile_keywords": []}
+
+
+def default_goal(keys: list[str], regions: list[str]) -> str:
+    what = ", ".join(dom.DOMAINS[k]["label"].lower() for k in keys)
+    where = ", ".join(dom.REGIONS[r][0] for r in regions) if regions else "partout en France"
+    return f"Stage dans ces domaines : {what}. Lieu : {where}."
+
+
 def user_criteria(u: dict, site: dict | None = None) -> dict:
-    """Réglages effectifs d'un utilisateur : les siens, complétés par ceux du site."""
+    """Réglages effectifs d'un utilisateur : ses domaines, ses régions, ses seuils, et ses listes s'il les a modifiées."""
     site = site or criteria()
     s = u.get("settings") or {}
     c = {k: s.get(k, v) for k, v in USER_DEFAULTS.items()}
+    c["domains"] = dom.clean(s.get("domains")) or list(dom.DEFAULT_DOMAINS)
+    c["regions"] = dom.clean_regions(s["regions"]) if isinstance(s.get("regions"), list) else list(dom.DEFAULT_REGIONS)
+    c["search_set"] = "domains" in s or "regions" in s      # a-t-il déjà choisi lui-même ?
+    mine = lists_for(c["domains"], site)
     for k in USER_LISTS:
-        c[k] = s[k] if isinstance(s.get(k), list) else site[k]
+        c[k] = s[k] if isinstance(s.get(k), list) else mine[k]
     c["custom_lists"] = [k for k in USER_LISTS if isinstance(s.get(k), list)]
+    c["goal_is_default"] = not (s.get("goal") or "").strip()
+    c["goal"] = (s.get("goal") or "").strip() or default_goal(c["domains"], c["regions"])
     return c
 
 
