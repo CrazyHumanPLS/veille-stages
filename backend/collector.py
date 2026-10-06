@@ -135,9 +135,15 @@ def store(name: str, raws: list[dict], crit: dict, distinct: bool = False) -> in
     return new
 
 
+MAX_PARALLEL = int(os.getenv("COLLECT_PARALLEL", "6"))   # sources lues en même temps (mémoire limitée sur Render gratuit)
+_slots: asyncio.Semaphore | None = None
+
+
 async def _run_source(name: str, coro, crit: dict, distinct: bool = False) -> int:
     try:
-        return store(name, await coro, crit, distinct)
+        async with _slots:
+            raws = await coro
+        return store(name, raws, crit, distinct)
     except Exception as e:  # une source en panne ne doit jamais bloquer les autres
         _state(name, False, error=f"{type(e).__name__}: {e}")
         return 0
@@ -159,6 +165,8 @@ async def collect(force: bool = False) -> int:
     adzuna_every = max(EVERY["adzuna"], 1440 * len(queries) / max(1, ADZUNA_CALLS_PER_DAY))
     load_seen()
     jobs = []
+    global _slots
+    _slots = asyncio.Semaphore(MAX_PARALLEL)   # créé ici : lié à la boucle asyncio du passage en cours
     async with httpx.AsyncClient(timeout=30, headers=sources.UA, follow_redirects=True) as h:
         if sources.ft_enabled() and _due("France Travail", EVERY["ft"], force):
             jobs.append(_run_source("France Travail", sources.france_travail(h, crit), crit))

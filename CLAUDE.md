@@ -104,6 +104,12 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   Limites connues : toujours des stages uniquement (pas d'alternance) ; une petite ville française absente des
   listes de `domains.py` n'est reconnue que par son numéro de département ; les pages carrières listées dans
   `companies.json` restent surtout des entreprises du numérique.
+- Sources (06/10, 23 h) : `companies.json` passe de 43 à 96 sources (52 pages Greenhouse vérifiées une à une avec au
+  moins une offre en France, plus le flux RSS de l'AFJV). `collector.py` lit au plus 6 sources à la fois
+  (`COLLECT_PARALLEL`) pour ménager la mémoire de Render. Pistes vérifiées mais non faites : connecteurs Workable
+  (`apply.workable.com/api/v1/widget/accounts/XXX`) et Teamtailor (`XXX.teamtailor.com/jobs.rss`), The Muse, Jooble
+  et Careerjet (clé à demander). Il n'existe pas de source gratuite couvrant « toutes les entreprises de France ».
+  L'utilisateur a demandé d'économiser son quota Claude : pas d'agents de recherche en série.
 - 10 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.
