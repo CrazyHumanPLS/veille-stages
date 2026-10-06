@@ -37,7 +37,7 @@ def count() -> int:
         return c.execute(select(func.count()).select_from(db.users)).scalar() or 0
 
 
-def create(email: str, name: str, password: str, is_admin: bool = False) -> dict | None:
+def create(email: str, name: str, password: str, is_admin: bool = False, verified: bool = True) -> dict | None:
     """Crée le compte. Renvoie None si l'adresse est déjà utilisée."""
     now = time.time()
     try:
@@ -46,7 +46,7 @@ def create(email: str, name: str, password: str, is_admin: bool = False) -> dict
                 email=clean_email(email), name=name.strip()[:80], pw_hash=security.hash_password(password),
                 created=now, last_seen=now, is_admin=int(is_admin), disabled=0, token_version=0,
                 secrets="", settings="{}", profile="{}", cursor=0, bootstrapped=0, last_eval=0,
-                ai_error="", alert_error="", plan_until=0))
+                ai_error="", alert_error="", plan_until=0, email_verified=int(verified)))
             uid = r.inserted_primary_key[0]
     except IntegrityError:
         return None
@@ -104,6 +104,10 @@ def remove(uid: int) -> None:
         c.execute(delete(db.applications).where(db.applications.c.user_id == uid))
         c.execute(delete(db.usage).where(db.usage.c.user_id == uid))
         c.execute(delete(db.users).where(db.users.c.id == uid))
+
+
+def is_verified(u: dict) -> bool:
+    return bool(u.get("email_verified", 1))
 
 
 def is_premium(u: dict) -> bool:

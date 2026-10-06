@@ -12,6 +12,7 @@ import os
 
 import accounts
 import db
+import mailer
 
 DEFAULT_LIMITS = {
     "assist": 5,            # lettres, analyses, messages… par jour et par personne
@@ -60,6 +61,11 @@ def ai_available(u: dict) -> bool:
     return bool(accounts.own_key(u) or shared_key())
 
 
+def needs_verification(u: dict) -> bool:
+    """Vrai si ce compte doit d'abord confirmer son adresse pour utiliser la clé commune."""
+    return mailer.enabled() and not accounts.is_verified(u) and not accounts.own_key(u)
+
+
 def shared_left() -> int:
     return max(0, limits()["shared_requests"] - db.usage_get(0, today()).get("req", 0))
 
@@ -73,6 +79,8 @@ def grant(u: dict, kind: str, units: int = 1) -> tuple[str, bool, int]:
     if not key:
         raise QuotaError("L'IA n'est pas disponible sur ce site pour l'instant. Ajoute ta propre clé Gemini "
                          "gratuite dans l'onglet Réglages.")
+    if needs_verification(u):
+        raise QuotaError("Confirme d'abord ton adresse e-mail (lien reçu à l'inscription) pour utiliser l'IA incluse.")
     mine = limit_for(u, kind)
     left = mine - db.usage_get(u["id"], today()).get(kind, 0)
     if left <= 0:
@@ -94,6 +102,6 @@ def view(u: dict) -> dict:
     """Ce que le site affiche : consommation du jour et limites."""
     lim, used = limits(), db.usage_get(u["id"], today())
     own = bool(accounts.own_key(u))
-    return {"own_key": own, "shared_available": bool(shared_key()), "premium": accounts.is_premium(u),
+    return {"own_key": own, "shared_available": bool(shared_key()), "premium": accounts.is_premium(u), "needs_verification": needs_verification(u),
             "premium_until": u.get("plan_until") or 0,
             "kinds": {k: {"used": used.get(k, 0), "limit": None if own else limit_for(u, k, lim)} for k in LABELS}}

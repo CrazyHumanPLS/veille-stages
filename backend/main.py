@@ -22,6 +22,7 @@ import ai  # noqa: E402
 import collector  # noqa: E402
 import cvstore  # noqa: E402
 import db  # noqa: E402
+import mailer  # noqa: E402
 import notify  # noqa: E402
 import quota  # noqa: E402
 import scoring  # noqa: E402
@@ -155,7 +156,7 @@ def public():
             "limits": {k: lim[k] for k in quota.LABELS}, "premium_limits": {k: lim["p_" + k] for k in quota.LABELS},
             # Premium : simple lien de paiement (Stripe, PayPal, Lydia…) ; l'administrateur active ensuite le compte.
             "premium": {"url": os.getenv("PREMIUM_URL", ""), "price": os.getenv("PREMIUM_PRICE", "")},
-            "shared_ai": bool(quota.shared_key()), "ga": GA_ID}
+            "shared_ai": bool(quota.shared_key()), "ga": GA_ID, "mail": mailer.enabled()}
 
 
 # ---------- comptes ----------
@@ -180,6 +181,7 @@ def me_view(u: dict) -> dict:
     s = u["secrets"]
     return {
         "id": u["id"], "email": u["email"], "name": u["name"], "is_admin": bool(u["is_admin"]),
+        "verified": accounts.is_verified(u) or not mailer.enabled(),
         "settings": scoring.user_criteria(u),
         "alerts": {"on": u["settings"].get("alerts_on", True), "discord": bool(s.get("discord")),
                    "ntfy": s.get("ntfy", ""), "telegram": bool(s.get("telegram")),
@@ -230,11 +232,117 @@ async def signup(body: Signup, request: Request, bg: BackgroundTasks):
     hit("signup-all-day", 86400)
     owner = accounts.clean_email(os.getenv("ADMIN_EMAIL", ""))
     is_admin = email == owner if owner else accounts.count() == 0
-    u = await asyncio.to_thread(accounts.create, email, body.name, body.password, is_admin)
+    mail = mailer.enabled()
+    # Avec les e-mails actifs, l'adresse doit être confirmée ; et le rôle d'administrateur lié à ADMIN_EMAIL
+    # n'est donné qu'à ce moment-là, pour que personne ne l'obtienne en s'inscrivant avec l'adresse d'un autre.
+    u = await asyncio.to_thread(accounts.create, email, body.name, body.password,
+                                is_admin and not (mail and owner), not mail)
     if not u:
         raise HTTPException(409, "Un compte existe déjà avec cette adresse. Connecte-toi.")
+    if mail:
+        bg.add_task(send_verification, u)
     bg.add_task(collector.process_one, u["id"])   # prépare tout de suite son flux d'offres
     return {"token": security.make_token(u["id"], 0), "me": me_view(u)}
+
+
+# ---------- confirmation de l'adresse et mot de passe oublié (par e-mail) ----------
+def _link(kind: str, token: str) -> str:
+    return f"{os.getenv('APP_URL', '').rstrip('/')}/#{kind}={token}"
+
+
+async def send_verification(u: dict) -> None:
+    token = security.make_link_token("verify", u["id"], 0, 7 * 24)
+    try:
+        await mailer.send(u["email"], f"Confirme ton adresse pour {APP_NAME}",
+                          [f"Bonjour{' ' + u['name'] if u['name'] else ''},",
+                           f"Tu viens de créer un compte sur {APP_NAME}. Confirme ton adresse pour activer la "
+                           "notation de tes offres par l'IA.",
+                           "Si ce n'est pas toi, ignore ce message : le compte ne sera pas activé."],
+                          ("Confirmer mon adresse", _link("verify", token)))
+    except Exception as e:
+        print("e-mail de confirmation non envoyé :", e)
+
+
+class Token(BaseModel):
+    token: str
+
+
+@app.post("/api/verify")
+def verify_email(body: Token, bg: BackgroundTasks):
+    got = security.read_link_token("verify", body.token)
+    u = accounts.by_id(got[0]) if got else None
+    if not u:
+        raise HTTPException(400, "Ce lien n'est plus valable. Connecte-toi et demande un nouvel e-mail de confirmation.")
+    fields = {"email_verified": 1}
+    if u["email"] == accounts.clean_email(os.getenv("ADMIN_EMAIL", "")):
+        fields["is_admin"] = 1
+    accounts.set_fields(u["id"], **fields)
+    bg.add_task(collector.process_one, u["id"])   # ses offres peuvent maintenant être notées
+    return {"ok": True}
+
+
+@app.post("/api/me/verify/resend")
+async def resend_verification(authorization: str = Header(default="")):
+    u = current(authorization)
+    if not mailer.enabled() or accounts.is_verified(u):
+        return {"ok": True}
+    throttle(f"verif:{u['id']}", 3, 3600, "E-mail déjà renvoyé plusieurs fois. Regarde dans tes indésirables, ou réessaie dans une heure.")
+    await send_verification(u)
+    return {"ok": True}
+
+
+class Forgot(BaseModel):
+    email: str
+
+
+@app.post("/api/password/forgot")
+async def forgot_password(body: Forgot, request: Request, bg: BackgroundTasks):
+    """Répond toujours la même chose, que le compte existe ou non : on ne révèle pas qui est inscrit."""
+    if not mailer.enabled():
+        raise HTTPException(400, "L'envoi d'e-mails n'est pas activé sur ce site. Demande un nouveau mot de passe à l'administrateur.")
+    email = accounts.clean_email(body.email)
+    throttle(f"forgot:{client_ip(request)}", 10, 3600)
+    if not blocked(f"forgot:{email}", 3, 3600):
+        hit(f"forgot:{email}", 3600)
+        u = accounts.by_email(email)
+        if u and not u["disabled"]:
+            token = security.make_link_token("reset", u["id"], u["token_version"], 1)
+            bg.add_task(_send_reset, u["email"], _link("reset", token))
+    return {"ok": True}
+
+
+async def _send_reset(to: str, link: str) -> None:
+    try:
+        await mailer.send(to, f"Nouveau mot de passe pour {APP_NAME}",
+                          ["Tu as demandé à choisir un nouveau mot de passe.",
+                           "Ce lien est valable une heure et ne fonctionne qu'une fois.",
+                           "Si ce n'est pas toi, ignore ce message : ton mot de passe actuel reste inchangé."],
+                          ("Choisir un nouveau mot de passe", link))
+    except Exception as e:
+        print("e-mail de mot de passe non envoyé :", e)
+
+
+class Reset(BaseModel):
+    token: str
+    new: str
+
+
+@app.post("/api/password/reset")
+async def reset_password(body: Reset, request: Request):
+    throttle(f"reset:{client_ip(request)}", 20, 3600)
+    got = security.read_link_token("reset", body.token)
+    u = accounts.by_id(got[0]) if got else None
+    if not u or u["disabled"] or u["token_version"] != got[1]:
+        raise HTTPException(400, "Ce lien n'est plus valable. Redemande un e-mail depuis « Mot de passe oublié ».")
+    if not 8 <= len(body.new) <= 200:
+        raise HTTPException(400, "Le mot de passe doit faire au moins 8 caractères.")
+    version = u["token_version"] + 1   # déconnecte tous les appareils et rend ce lien inutilisable
+    fields = {"pw_hash": await asyncio.to_thread(security.hash_password, body.new), "token_version": version,
+              "email_verified": 1}     # recevoir ce lien prouve que l'adresse lui appartient
+    if u["email"] == accounts.clean_email(os.getenv("ADMIN_EMAIL", "")):
+        fields["is_admin"] = 1
+    accounts.set_fields(u["id"], **fields)
+    return {"token": security.make_token(u["id"], version), "me": me_view(accounts.by_id(u["id"]))}
 
 
 @app.post("/api/login")
@@ -719,6 +827,7 @@ def admin_overview(_: dict = Depends(admin)):
                "last_seen": u["last_seen"], "is_admin": bool(u["is_admin"]), "disabled": bool(u["disabled"]),
                "own_key": bool(accounts.own_key(u)), "cv": len(cvstore.cvs(u)),
                "premium": accounts.is_premium(u), "premium_until": u.get("plan_until") or 0,
+               "verified": accounts.is_verified(u) or not mailer.enabled(),
                "channels": sorted(k for k in ("discord", "ntfy", "telegram") if u["secrets"].get(k)),
                "paused": time.time() - (u["last_seen"] or 0) > collector.INACTIVE_DAYS * 86400,
                "usage": used.get(u["id"], {}), "ai_error": u["ai_error"] or "", "alert_error": u["alert_error"] or ""}
@@ -735,7 +844,8 @@ def admin_overview(_: dict = Depends(admin)):
             "config": {"gemini": bool(quota.shared_key()), "adzuna": sources.adzuna_enabled(),
                        "france_travail": sources.ft_enabled(), "telegram": bool(notify.token()),
                        "database": "postgres" if db.IS_PG else "sqlite", "secret": bool(os.getenv("SECRET_KEY")),
-                       "cron": bool(os.getenv("CRON_KEY")), "app_url": bool(os.getenv("APP_URL"))}}
+                       "cron": bool(os.getenv("CRON_KEY")), "app_url": bool(os.getenv("APP_URL")),
+                       "mail": mailer.enabled()}}
 
 
 @app.get("/api/admin/settings")

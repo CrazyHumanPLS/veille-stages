@@ -21,7 +21,7 @@ Créé le 06/10/2026 à partir de l'application personnelle `stage-app` (même a
 Variables d'environnement (valeurs dans Render uniquement) : `DATABASE_URL`, `SECRET_KEY` (créée par Render,
 ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI_API_KEY` (clé commune),
 `GEMINI_MODEL`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `SIGNUP_MODE`, `INVITE_CODE`, `CONTACT_EMAIL`, `DONATE_URL`,
-`TELEGRAM_TOKEN`, `TELEGRAM_BOT`, `COLLECT_EVERY_SEC`, `LEGAL_NAME`, `PREMIUM_URL`, `PREMIUM_PRICE`, `GA_ID`.
+`TELEGRAM_TOKEN`, `TELEGRAM_BOT`, `COLLECT_EVERY_SEC`, `LEGAL_NAME`, `PREMIUM_URL`, `PREMIUM_PRICE`, `GA_ID`, `BREVO_API_KEY`, `MAIL_FROM`.
 
 ## Choix de conception (décidés le 06/10/2026, l'utilisateur a délégué)
 
@@ -89,7 +89,13 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
 - Mesure d'audience facultative : variable `GA_ID` (Google Analytics). Bandeau « Refuser / Accepter », rien n'est
   chargé avant l'accord (`frontend/src/analytics.js`), lien « Cookies » en bas de page pour changer d'avis. Sans
   `GA_ID` : aucun bandeau, aucun cookie de mesure.
-- 8 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
+- E-mails (06/10, 19 h) : `backend/mailer.py` envoie par l'API de Brevo (Render gratuit bloque les ports SMTP).
+  Variables `BREVO_API_KEY` et `MAIL_FROM`. Confirmation d'adresse à l'inscription (colonne `users.email_verified`,
+  les comptes existants sont considérés confirmés ; sans confirmation, pas d'accès à la clé Gemini commune ; le rôle
+  administrateur lié à `ADMIN_EMAIL` n'est donné qu'à la confirmation). Mot de passe oublié : lien valable une heure,
+  à usage unique (`/api/password/forgot`, `/api/password/reset`). Liens du type `/#verify=…` et `/#reset=…`.
+  Sans ces variables, rien ne change. Jamais testé avec un vrai compte Brevo au moment de l'écriture.
+- 9 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.
 

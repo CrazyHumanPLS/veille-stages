@@ -12,7 +12,7 @@ export default function Admin({ me }) {
   const c = ov.config;
   const checks = [["Base de données en ligne (Postgres)", c.database === "postgres"], ["Clé secrète du site (SECRET_KEY)", c.secret],
     ["Clé Gemini commune (GEMINI_API_KEY)", c.gemini], ["Réveil automatique (CRON_KEY)", c.cron], ["Adresse du site (APP_URL)", c.app_url],
-    ["Adzuna (facultatif)", c.adzuna], ["France Travail (facultatif)", c.france_travail], ["Bot Telegram (facultatif)", c.telegram]];
+    ["Envoi d'e-mails : confirmation d'adresse et mot de passe oublié (BREVO_API_KEY et MAIL_FROM)", c.mail], ["Adzuna (facultatif)", c.adzuna], ["France Travail (facultatif)", c.france_travail], ["Bot Telegram (facultatif)", c.telegram]];
   const save = body => act("Enregistrement…", async () => { setSet(await put("/api/admin/settings", body)); });
   const lim = k => ({ type: "number", min: 0, value: set.limits[k], onChange: e => setSet({ ...set, limits: { ...set.limits, [k]: +e.target.value } }) });
   const lines = k => ({ value: (set.criteria[k] || []).join("\n"), onChange: e => setSet({ ...set, criteria: { ...set.criteria, [k]: e.target.value.split("\n") } }) });
@@ -39,7 +39,7 @@ export default function Admin({ me }) {
       <tbody>{ov.users.map(u => (
         <tr key={u.id}>
           <td><Dot ok={!u.disabled && !u.paused} /> {u.name || "(sans prénom)"}{u.is_admin && <span className="tag">admin</span>}{u.premium && <span className="tag gold">Premium jusqu'au {new Date(u.premium_until * 1000).toLocaleDateString("fr-FR")}</span>}<div className="mute">{u.email}</div>
-            {u.disabled && <div className="err">désactivé</div>}{!u.disabled && u.paused && <div className="mute">veille en pause (inactif)</div>}
+            {!u.verified && <div className="mute">adresse e-mail non confirmée</div>}{u.disabled && <div className="err">désactivé</div>}{!u.disabled && u.paused && <div className="mute">veille en pause (inactif)</div>}
             {u.ai_error && <div className="err small">IA : {u.ai_error}</div>}{u.alert_error && <div className="err small">Alertes : {u.alert_error}</div>}</td>
           <td>{ago(u.last_seen)}</td><td>{u.cv}</td><td>{u.channels.join(", ") || "aucune"}</td>
           <td>{u.own_key ? "sa clé" : "clé commune"}<div className="mute">{u.usage.score || 0} notes · {u.usage.assist || 0} générations</div></td>

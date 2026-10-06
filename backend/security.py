@@ -66,6 +66,26 @@ def read_token(token: str) -> tuple[int, int] | None:
     return (uid, ver) if exp > time.time() else None
 
 
+def make_link_token(purpose: str, user_id: int, version: int, hours: float) -> str:
+    """Jeton glissé dans un lien envoyé par e-mail. « purpose » empêche d'utiliser un lien pour autre chose
+    que ce pour quoi il a été créé ; « version » le rend inutilisable après un changement de mot de passe."""
+    payload = f"{purpose}.{user_id}.{int(time.time() + hours * 3600)}.{version}"
+    return f"{payload}.{_sign('lien:' + payload)}"
+
+
+def read_link_token(purpose: str, token: str) -> tuple[int, int] | None:
+    """Renvoie (identifiant, version) si le lien est authentique, du bon type et encore valable."""
+    payload, _, sig = (token or "").rpartition(".")
+    if not payload or not hmac.compare_digest(sig, _sign("lien:" + payload)):
+        return None
+    try:
+        kind, uid, exp, ver = payload.split(".")
+        uid, exp, ver = int(uid), int(exp), int(ver)
+    except ValueError:
+        return None
+    return (uid, ver) if kind == purpose and exp > time.time() else None
+
+
 def short_code(user_id: int, purpose: str) -> str:
     """Petit code stable et impossible à deviner (liaison Telegram)."""
     return hmac.new(_secret(), f"{purpose}:{user_id}".encode(), hashlib.sha256).hexdigest()[:8].upper()

@@ -81,6 +81,17 @@ const Legal = ({ info, only }) => (<>
   {(!only || only === "imprint") && <Imprint info={info} />}
 </>);
 
+// Rappel tant que l'adresse e-mail n'est pas confirmée.
+function Unverified({ me }) {
+  const { msg, busy, act } = useAction();
+  if (me.verified) return null;
+  return (<div className="note verify">
+    <p><b>Confirme ton adresse e-mail.</b> Un message a été envoyé à {me.email}. Clique sur le lien qu'il contient pour que tes offres soient notées par l'IA. Pense à regarder dans tes indésirables.</p>
+    <button className="btn ghost" disabled={busy} onClick={() => act("Envoi…", async () => { await post("/api/me/verify/resend"); return "E-mail renvoyé."; })}>Renvoyer l'e-mail</button>
+    {msg && <span className="mute">{msg}</span>}
+  </div>);
+}
+
 // Premiers pas : deux réglages à faire une fois, dans l'ordre.
 function Start({ me, go }) {
   const alerts = me.alerts.discord || me.alerts.ntfy || me.alerts.telegram;
@@ -120,6 +131,30 @@ const DEMO = [
   { s: 61, t: "Stage DevOps plateforme", c: "Lumen Cloud", p: "Nanterre", w: "Domaine voisin : Kubernetes demandé, peu présent dans ton CV." },
 ];
 
+function NewPassword({ info, token, onOk, onCancel }) {
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const go = async e => {
+    e.preventDefault(); setErr(""); setBusy(true);
+    try { const r = await post("/api/password/reset", { token, new: pw }); setToken(r.token); onOk(r.me); }
+    catch (x) { setErr(x.message); }
+    setBusy(false);
+  };
+  return (<div className="landing">
+    <div className="topbar"><div className="brand"><Mark />{info?.name || "Veille Stages"}</div></div>
+    <div className="wrap narrow">
+      <h2>Choisis ton nouveau mot de passe</h2>
+      <form className="join form" onSubmit={go}>
+        <label>Nouveau mot de passe (8 caractères minimum)<input type="password" required minLength={8} autoFocus value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" /></label>
+        <button className="btn big" disabled={busy}>{busy ? "Un instant…" : "Enregistrer et me connecter"}</button>
+        {err && <p className="err">{err}</p>}
+        <p className="mute"><a href="#" onClick={e => { e.preventDefault(); onCancel(); }}>Revenir à l'accueil</a></p>
+      </form>
+    </div>
+  </div>);
+}
+
 function Auth({ info, onOk, onCookies }) {
   const closed = info?.signup === "closed";
   const [mode, setMode] = useState("signup");
@@ -129,10 +164,13 @@ function Auth({ info, onOk, onCookies }) {
   const [doc, setDoc] = useState("");   // page légale ouverte : "", "terms", "privacy" ou "imprint"
   const open = k => e => { e.preventDefault(); setDoc(doc === k ? "" : k); setTimeout(() => document.getElementById("legal")?.scrollIntoView({ behavior: "smooth" }), 50); };
   const set = k => e => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
+  const [sent, setSent] = useState(false);
   const go = async e => {
     e.preventDefault(); setErr(""); setBusy(true);
-    try { const r = await post(mode === "login" ? "/api/login" : "/api/signup", f); setToken(r.token); onOk(r.me); }
-    catch (x) { setErr(x.message); }
+    try {
+      if (mode === "forgot") { await post("/api/password/forgot", { email: f.email }); setSent(true); }
+      else { const r = await post(mode === "login" ? "/api/login" : "/api/signup", f); setToken(r.token); onOk(r.me); }
+    } catch (x) { setErr(x.message); }
     setBusy(false);
   };
   const lim = info?.limits;
@@ -154,9 +192,19 @@ function Auth({ info, onOk, onCookies }) {
       <section className="join">
         <div className="tabs2" role="tablist">
           <button role="tab" aria-selected={mode === "signup"} className={mode === "signup" ? "on" : ""} onClick={() => { setMode("signup"); setErr(""); }}>Créer un compte</button>
-          <button role="tab" aria-selected={mode === "login"} className={mode === "login" ? "on" : ""} onClick={() => { setMode("login"); setErr(""); }}>Se connecter</button>
+          <button role="tab" aria-selected={mode === "login"} className={mode !== "signup" ? "on" : ""} onClick={() => { setMode("login"); setErr(""); }}>Se connecter</button>
         </div>
-        {mode === "signup" && closed ? <p className="note">Les inscriptions sont fermées pour le moment.</p> :
+        {mode === "forgot" ? (sent
+          ? <div className="form"><p className="note">Si un compte existe avec cette adresse, un e-mail vient de partir. Le lien est valable une heure. Pense à regarder dans tes indésirables.</p>
+              <button className="btn ghost" onClick={() => { setMode("login"); setSent(false); }}>Revenir à la connexion</button></div>
+          : <form className="form" onSubmit={go}>
+              <p className="mute">Indique l'adresse de ton compte : tu recevras un lien pour choisir un nouveau mot de passe.</p>
+              <label>Adresse e-mail<input type="email" required autoFocus value={f.email} onChange={set("email")} autoComplete="email" /></label>
+              <button className="btn big" disabled={busy}>{busy ? "Un instant…" : "Recevoir le lien"}</button>
+              {err && <p className="err">{err}</p>}
+              <p className="mute"><a href="#" onClick={e => { e.preventDefault(); setMode("login"); setErr(""); }}>Revenir à la connexion</a></p>
+            </form>) :
+        mode === "signup" && closed ? <p className="note">Les inscriptions sont fermées pour le moment.</p> :
           <form className="form" onSubmit={go}>
             {mode === "signup" && <label>Prénom<input value={f.name} onChange={set("name")} maxLength={80} autoComplete="given-name" /></label>}
             <label>Adresse e-mail<input type="email" required value={f.email} onChange={set("email")} autoComplete="email" /></label>
@@ -166,7 +214,9 @@ function Auth({ info, onOk, onCookies }) {
               <span>J'accepte les <a href="#" onClick={open("terms")}>conditions d'utilisation</a> et que mon CV soit enregistré et analysé pour me proposer des offres (<a href="#" onClick={open("privacy")}>détail</a>).</span></label>}
             <button className="btn big" disabled={busy}>{busy ? "Un instant…" : mode === "login" ? "Se connecter" : "Créer mon compte gratuit"}</button>
             {err && <p className="err">{err}</p>}
-            {mode === "login" && <p className="mute">Mot de passe oublié ? Demande à la personne qui t'a donné l'adresse du site : elle peut t'en créer un nouveau.</p>}
+            {mode === "login" && (info?.mail
+              ? <p className="mute"><a href="#" onClick={e => { e.preventDefault(); setMode("forgot"); setErr(""); setSent(false); }}>Mot de passe oublié ?</a></p>
+              : <p className="mute">Mot de passe oublié ? Demande à la personne qui t'a donné l'adresse du site : elle peut t'en créer un nouveau.</p>)}
           </form>}
         {mode === "signup" && !closed && <ul className="perks">
           <li>Gratuit, sans publicité.</li>
@@ -224,7 +274,8 @@ function Feed({ me, onTrack, onUntrack, onAnalyse, status, refreshStatus, reload
     setBusy(true); setNote(""); setErr("");
     try {
       const r = await post("/api/refresh");
-      setNote(r.setup ? "Importe ton CV dans l'onglet Profil : tes offres seront notées et tes alertes activées."
+      setNote(r.setup === "email" ? "Confirme ton adresse e-mail pour que tes offres soient notées par l'IA."
+        : r.setup ? "Importe ton CV dans l'onglet Profil : tes offres seront notées et tes alertes activées."
         : r.waiting ? `Notation en cours : ${r.scored} offre(s) notée(s), la suite arrive dans quelques minutes.`
         : `À jour : ${r.new} nouvelle(s) offre(s) pour toi, ${r.scored} notée(s) par l'IA, ${r.alerts} alerte(s) envoyée(s).`);
     } catch (e) { setErr(e.message); }
@@ -396,6 +447,8 @@ function Profile({ me, reloadMe, goSettings }) {
 }
 
 const TABS = ["feed", "track", "ai", "profile", "settings", "admin", "privacy"];
+const hashLink = () => { const m = window.location.hash.match(/^#(verify|reset)=([\w.]+)$/); return m ? { kind: m[1], token: m[2] } : null; };
+const clearHash = () => { try { window.history.replaceState(null, "", window.location.pathname); } catch { window.location.hash = ""; } };
 const hashTab = () => { const h = window.location.hash.slice(1); return TABS.includes(h) ? h : "feed"; };
 
 export default function App() {
@@ -404,6 +457,15 @@ export default function App() {
   const [tabAsked, setTabRaw] = useState(hashTab);
   const [ctx, setCtx] = useState(null);          // offre ouverte dans l'assistant
   const [feedKey, setFeedKey] = useState(0);     // augmente pour recharger la liste des offres
+  const [link, setLink] = useState(hashLink);   // lien reçu par e-mail, s'il y en a un dans l'adresse
+  const [flash, setFlash] = useState("");
+  useEffect(() => {
+    if (link?.kind !== "verify") return;
+    post("/api/verify", { token: link.token })
+      .then(() => { setFlash("Adresse confirmée. Tes offres vont être notées par l'IA."); if (getToken()) reloadMe(); })
+      .catch(e => setFlash(e.message));
+    clearHash(); setLink(null);
+  }, []);
   const [askCookies, setAskCookies] = useState(false);
   useEffect(() => { if (info?.ga) { audience.resume(info.ga); setAskCookies(!audience.choice()); } }, [info]);
   const consent = <Consent info={info} ask={askCookies} onDone={() => setAskCookies(false)} onMore={() => { if (me) setTab("privacy"); else document.querySelector("#legal footer a:nth-child(2)")?.click(); }} />;
@@ -445,7 +507,8 @@ export default function App() {
   }, []);
   useEffect(() => { if (info?.name) document.title = info.name; }, [info]);
   if (me === undefined) return <div className="loading"><div><div className="brand" style={{ justifyContent: "center", fontSize: "1.4rem" }}><Mark />{info?.name || "Veille Stages"}</div><p className="mute">Chargement… (jusqu'à une minute si le serveur dormait)</p></div></div>;
-  if (!me) return <><Auth info={info} onOk={start} onCookies={() => setAskCookies(true)} />{consent}</>;
+  if (link?.kind === "reset") return <NewPassword info={info} token={link.token} onOk={m => { clearHash(); setLink(null); start(m); }} onCancel={() => { clearHash(); setLink(null); }} />;
+  if (!me) return <>{flash && <p className="note flash">{flash}</p>}<Auth info={info} onOk={start} onCookies={() => setAskCookies(true)} />{consent}</>;
   const track = async a => { const r = await post("/api/applications", a); reload(); return r.id; };
   const untrack = async id => { if (id) await api(`/api/applications/${id}`, { method: "DELETE" }); reload(); };
   const toAI = (t, k = "", o = null) => { setOffer(t); setCv(k); setCtx(o); setTab("ai"); };
@@ -467,6 +530,8 @@ export default function App() {
       <div className="who"><span className="mute">{me.name || me.email}</span><button className="btn quiet" onClick={out}>Se déconnecter</button></div>
     </div>
     <div className="wrap">
+      {flash && <p className="note">{flash}</p>}
+      <Unverified me={me} />
       {tab === "feed" && <Start me={me} go={setTab} />}
       <div hidden={tab !== "feed"}><Feed me={me} onTrack={track} onUntrack={untrack} onAnalyse={toAI} status={status} refreshStatus={refreshStatus} reloadKey={feedKey} focusId={ctx?.id} toast={showToast} /></div>
       {tab === "track" && <Tracker apps={apps} reload={reload} />}

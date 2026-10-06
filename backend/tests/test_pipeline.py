@@ -39,6 +39,7 @@ discord: dict[str, list[str]] = {}   # adresse du webhook -> messages reçus
 ntfy, telegram, gemini_keys, extra_ft = [], [], [], []
 tg_updates = []
 gemini_fail = {"on": False}
+mails, mail_fail = [], {"on": False}
 
 
 def handler(req: httpx.Request) -> httpx.Response:
@@ -64,6 +65,11 @@ def handler(req: httpx.Request) -> httpx.Response:
         cv = "cv2" if "[CV cv2" in prompt else "cv1"
         return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": json.dumps(
             [{"id": i, "score": 85, "cv": cv, "raison": "Très proche du profil"} for i in ids])}]}}]})
+    if "api.brevo.com" in u:
+        if mail_fail["on"]:
+            return httpx.Response(401, json={"message": "Key not found"})
+        mails.append({**json.loads(req.content), "_key": req.headers.get("api-key")})
+        return httpx.Response(201, json={"messageId": "<1@relay>"})
     if "discord.com" in u:
         if u.endswith("/casse"):
             return httpx.Response(404, text="Unknown Webhook")
@@ -528,3 +534,69 @@ def test_premium():
         pub = c.get("/api/public").json()
         assert pub["premium_limits"]["score"] == lim["p_score"] and "url" in pub["premium"]
     main._hits.clear()
+
+
+def test_emails(monkeypatch):
+    """Confirmation de l'adresse et mot de passe oublié par e-mail."""
+    import re as _re
+    from fastapi.testclient import TestClient
+    import main, mailer
+    main._hits.clear(); mails.clear(); mailer._sent.clear()
+    link = lambda m, kind: _re.search(rf"#{kind}=([\w.]+)", m["textContent"]).group(1)
+    with TestClient(main.app) as c:
+        # sans service d'e-mails : rien ne change, le compte est utilisable tout de suite
+        r = c.post("/api/signup", json={"email": "sansmail@ex.fr", "password": "motdepasse1", "consent": True}).json()
+        assert r["me"]["verified"] and not mails and c.get("/api/public").json()["mail"] is False
+        assert c.post("/api/password/forgot", json={"email": "sansmail@ex.fr"}).status_code == 400
+
+        monkeypatch.setenv("BREVO_API_KEY", "cle-brevo"); monkeypatch.setenv("MAIL_FROM", "bonjour@site.test")
+        assert c.get("/api/public").json()["mail"] is True
+        # 1) inscription : un e-mail part, le compte attend la confirmation pour utiliser l'IA commune
+        r = c.post("/api/signup", json={"email": "nouvelle@ex.fr", "password": "motdepasse1", "name": "Lina", "consent": True}).json()
+        h = {"Authorization": "Bearer " + r["token"]}
+        assert r["me"]["verified"] is False and r["me"]["ai"]["needs_verification"] is True
+        m = mails[-1]
+        assert m["to"] == [{"email": "nouvelle@ex.fr"}] and m["sender"]["email"] == "bonjour@site.test" and m["_key"] == "cle-brevo"
+        assert "https://site.test/#verify=" in m["textContent"] and "Confirmer mon adresse" in m["htmlContent"]
+        u = accounts.by_email("nouvelle@ex.fr")
+        u["profile"] = {"cvs": {"cv1": {"text": "M2 réseaux. Cisco, BGP, Linux."}}}; accounts.save_profile(u)
+        assert run(collector.process_one(u["id"])).get("setup") == "email"          # pas de note par l'IA avant confirmation
+        assert c.post("/api/ai", json={"task": "targets"}, headers=h).status_code == 429
+        # un lien d'un autre type, ou trafiqué, est refusé
+        assert c.post("/api/verify", json={"token": security.make_link_token("reset", u["id"], 0, 1)}).status_code == 400
+        assert c.post("/api/verify", json={"token": link(m, "verify")[:-1] + "0"}).status_code == 400
+        assert c.post("/api/verify", json={"token": link(m, "verify")}).json()["ok"]
+        me = c.get("/api/me", headers=h).json()
+        assert me["verified"] and me["ai"]["needs_verification"] is False and not me["is_admin"]
+        assert c.post("/api/ai", json={"task": "targets"}, headers=h).status_code == 200
+        # 2) renvoi : inutile une fois confirmé, donc aucun e-mail de plus
+        n = len(mails); assert c.post("/api/me/verify/resend", headers=h).json()["ok"] and len(mails) == n
+        # 3) mot de passe oublié : même réponse pour une adresse inconnue, mais aucun e-mail
+        assert c.post("/api/password/forgot", json={"email": "inconnu@ex.fr"}).json() == {"ok": True} and len(mails) == n
+        assert c.post("/api/password/forgot", json={"email": " Nouvelle@ex.fr "}).json() == {"ok": True}
+        m = mails[-1]; tok = link(m, "reset")
+        assert len(mails) == n + 1 and "Choisir un nouveau mot de passe" in m["htmlContent"]
+        assert c.post("/api/password/reset", json={"token": tok, "new": "court"}).status_code == 400
+        assert c.post("/api/password/reset", json={"token": link(mails[n - 1] if "#verify=" in mails[n - 1]["textContent"] else mails[0], "verify"), "new": "motdepasse2"}).status_code == 400
+        r = c.post("/api/password/reset", json={"token": tok, "new": "motdepasse2"})
+        assert r.status_code == 200 and r.json()["me"]["email"] == "nouvelle@ex.fr"
+        assert c.get("/api/me", headers=h).status_code == 401                         # l'ancienne connexion est fermée
+        assert c.post("/api/password/reset", json={"token": tok, "new": "motdepasse3"}).status_code == 400   # lien à usage unique
+        assert c.post("/api/login", json={"email": "nouvelle@ex.fr", "password": "motdepasse2"}).status_code == 200
+        assert c.post("/api/login", json={"email": "nouvelle@ex.fr", "password": "motdepasse1"}).status_code == 401
+        # pas plus de 3 demandes par heure pour une même adresse
+        for _ in range(4):
+            c.post("/api/password/forgot", json={"email": "nouvelle@ex.fr"})
+        assert len(mails) == n + 3
+        # 4) l'adresse de l'administrateur ne donne le rôle qu'après confirmation
+        accounts.remove(accounts.by_email("chef@ex.fr")["id"]) if accounts.by_email("chef@ex.fr") else None
+        main._hits.clear()
+        r = c.post("/api/signup", json={"email": "chef@ex.fr", "password": "motdepasse1", "consent": True}).json()
+        assert r["me"]["is_admin"] is False
+        assert c.post("/api/verify", json={"token": link(mails[-1], "verify")}).json()["ok"]
+        assert c.get("/api/me", headers={"Authorization": "Bearer " + r["token"]}).json()["is_admin"] is True
+        # 5) service d'e-mails en panne : l'inscription marche quand même
+        mail_fail["on"] = True
+        assert c.post("/api/signup", json={"email": "panne@ex.fr", "password": "motdepasse1", "consent": True}).status_code == 200
+        mail_fail["on"] = False
+    main._hits.clear(); mails.clear()

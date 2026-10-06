@@ -266,6 +266,8 @@ async def process_user(u: dict, budget: dict) -> dict:
     # partira une fois le CV en place. Les offres restent visibles sur le site avec leur score par mots-clés.
     if first and quota.ai_available(u) and not profile.strip():
         return {**result, "setup": "cv"}
+    if first and quota.needs_verification(u) and quota.shared_key():
+        return {**result, "setup": "email"}
     pending = _pending(uid, first)
     if not pending:
         if first:

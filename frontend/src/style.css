@@ -158,6 +158,11 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);display
 .tag.gold{background:var(--hl);color:var(--ink)}
 td .tag{margin:0 0 0 6px}
 
+.verify{display:flex;gap:10px 14px;align-items:center;flex-wrap:wrap}
+.verify p{margin:0;flex:1;min-width:240px}
+.wrap.narrow{max-width:480px}
+.note.flash{max-width:900px;margin:12px auto 0}
+
 /* ---------- bandeau de consentement à la mesure d'audience ---------- */
 .consent{position:fixed;left:16px;bottom:16px;z-index:50;max-width:420px;background:var(--p);border:1px solid var(--line);border-radius:var(--r-sheet);padding:16px 18px;box-shadow:0 14px 40px rgba(20,26,60,.22)}
 .consent p{margin:0 0 12px;font-size:.92rem}
