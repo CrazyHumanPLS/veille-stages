@@ -55,6 +55,7 @@ USER_DEFAULTS = {
     "min_kw": 25,             # en dessous : l'offre ne lui est pas proposée
     "notify_ai": 60,          # alerte si le score Gemini atteint ce seuil
     "notify_kw": 45,          # seuil utilisé quand l'IA n'est pas disponible
+    "ai_min_kw": 40,          # l'IA ne note que les offres dont le score par mots-clés atteint ce seuil
     "alerts_on": True,
 }
 USER_LISTS = ("strong", "tech", "negative")   # par défaut ceux du site ; chacun peut avoir les siens

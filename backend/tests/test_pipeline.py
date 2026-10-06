@@ -394,3 +394,24 @@ def test_api():
         assert c.get("/api/cron?key=bad").status_code == 403
         assert "new" in c.get("/api/cron?key=k&wait=1").json()
         assert "new" in c.post("/api/admin/collect", headers=hc).json()
+
+
+def test_ai_threshold():
+    """L'IA ne note que les offres dont le score par mots-clés atteint le seuil de l'utilisateur."""
+    u = accounts.create("seuil@ex.fr", "Seuil", "motdepasse9")
+    u["profile"] = {"cvs": {"cv1": {"text": "M2 réseaux. Cisco, BGP, Linux."}}}
+    accounts.save_profile(u)
+    u["settings"] = {"min_kw": 0}
+    accounts.save_settings(u)
+    collector.sync_user(u)
+    scores = sorted({r.kw_score for r in rows(u["id"]).values()})
+    assert len(scores) >= 2, scores
+    u["settings"]["ai_min_kw"] = scores[-1]          # seule la mieux placée passe le seuil
+    accounts.save_settings(u)
+    res = run(collector.process_one(u["id"]))
+    mine = rows(u["id"]).values()
+    assert res["scored"] == sum(r.kw_score >= scores[-1] for r in mine) >= 1
+    assert all((r.ai_score == 85) == (r.kw_score >= scores[-1]) for r in mine)
+    assert all(r.notified for r in mine)             # les autres sont traitées sans IA, pas laissées en attente
+    assert quota.view(accounts.by_id(u["id"]))["kinds"]["score"]["used"] == res["scored"]
+    assert scoring.user_criteria({"settings": {}})["ai_min_kw"] == 40

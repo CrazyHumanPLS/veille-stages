@@ -109,7 +109,9 @@ function Search({ reloadMe }) {
         <label>M'alerter si le score de l'IA atteint <input {...num("notify_ai")} /></label>
         <label>Sans IA, si le score par mots-clés atteint <input {...num("notify_kw")} /></label>
         <label>Ne pas me proposer sous <input {...num("min_kw")} /></label>
+        <label>Faire noter par l'IA à partir de <input {...num("ai_min_kw")} /></label>
       </div>
+      <p className="mute">Ces deux derniers seuils portent sur le score par mots-clés. Sous le seuil de l'IA, une offre reste affichée avec son score par mots-clés mais n'est pas envoyée à l'IA : ça économise ton quota.</p>
       <details><summary className="mute">Mots-clés (réglage avancé){crit.custom_lists?.length ? " : listes personnalisées" : " : listes du site"}</summary>
         <div className="cols">
           <div><h4>Mots-clés forts (un par ligne)</h4><textarea {...lines("strong")} /></div>

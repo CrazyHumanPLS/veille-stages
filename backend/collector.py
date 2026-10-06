@@ -275,7 +275,8 @@ async def process_user(u: dict, budget: dict) -> dict:
     # ---- notation par l'IA ----
     wait, error, own_left = False, "", OWN_BATCHES_PER_RUN
     if quota.ai_available(u) and profile.strip():
-        to_score = [o for o in pending if o["ai_score"] is None]
+        # Économie de quota : sous le seuil, l'offre garde son score par mots-clés et n'est pas envoyée à l'IA.
+        to_score = [o for o in pending if o["ai_score"] is None and o["kw_score"] >= crit["ai_min_kw"]]
         if first:
             to_score = to_score[:FIRST_RUN_AI]
         for i in range(0, len(to_score), 8):

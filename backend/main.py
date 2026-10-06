@@ -348,7 +348,7 @@ def put_criteria(body: dict, bg: BackgroundTasks, u: dict = Depends(current)):
     s = u["settings"]
     if isinstance(body.get("goal"), str) and body["goal"].strip():
         s["goal"] = " ".join(body["goal"].split())[:300]
-    for k in ("min_kw", "notify_ai", "notify_kw"):
+    for k in ("min_kw", "notify_ai", "notify_kw", "ai_min_kw"):
         if isinstance(body.get(k), (int, float)):
             s[k] = max(0, min(100, int(body[k])))
     if isinstance(body.get("profile_keywords"), list):
