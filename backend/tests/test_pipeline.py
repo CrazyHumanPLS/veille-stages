@@ -16,8 +16,16 @@ os.environ.update(DATABASE_URL="sqlite:///" + tempfile.mkdtemp() + "/t.db", COLL
 
 import accounts, collector, db, quota, scoring, security  # noqa: E402
 
+# Dates des fausses annonces : calculées d'après le jour du test, sinon elles finiraient par dépasser
+# l'ancienneté maximale (20 jours) et les tests échoueraient sans raison.
+import datetime as _dt  # noqa: E402
+from email.utils import format_datetime as _rfc  # noqa: E402
+_NOW = _dt.datetime.now(_dt.timezone.utc)
+RECENT = (_NOW - _dt.timedelta(days=2)).strftime("%Y-%m-%d")
+RECENT_RSS, OLD_RSS = _rfc(_NOW - _dt.timedelta(days=2)), _rfc(_NOW - _dt.timedelta(days=36))
+
 FT = [{"id": "A1", "intitule": "Stage ingénieur réseaux et sécurité H/F", "entreprise": {"nom": "Orange"},
-       "lieuTravail": {"libelle": "92 - Châtillon"}, "dateCreation": "2026-10-05T10:00:00Z",
+       "lieuTravail": {"libelle": "92 - Châtillon"}, "dateCreation": RECENT + "T10:00:00Z",
        "description": "Stage de fin d'études bac+5. BGP, OSPF, Cisco, firewall Fortinet.",
        "origineOffre": {"urlOrigine": "https://ex.fr/a1"}},
       {"id": "A2", "intitule": "Commercial sédentaire réseau d'agences", "entreprise": {"nom": "Immo"},
@@ -43,11 +51,45 @@ mails, mail_fail = [], {"on": False}
 adzuna_calls = []
 ADZUNA = {"stage embarqué": [
     {"id": "E1", "title": "Stage ingénieur logiciel embarqué C / STM32 (H/F)", "company": {"display_name": "Aero Systèmes"},
-     "location": {"display_name": "Toulouse, Haute-Garonne"}, "redirect_url": "https://adz/e1", "created": "2026-10-05T08:00:00Z",
+     "location": {"display_name": "Toulouse, Haute-Garonne"}, "redirect_url": "https://adz/e1", "created": RECENT + "T08:00:00Z",
      "description": "Stage de fin d'études. Développement C embarqué sur microcontrôleur STM32, RTOS, tests et validation."},
     {"id": "E2", "title": "Stage FPGA VHDL - électronique numérique", "company": {"display_name": "Onde Défense"},
-     "location": {"display_name": "Élancourt, Yvelines"}, "redirect_url": "https://adz/e2", "created": "2026-10-05T08:00:00Z",
+     "location": {"display_name": "Élancourt, Yvelines"}, "redirect_url": "https://adz/e2", "created": RECENT + "T08:00:00Z",
      "description": "Stage ingénieur. Conception FPGA en VHDL, Vivado, bancs de test, CEM."}]}
+
+WORKABLE = {"name": "Withings", "description": "", "jobs": [
+    {"title": "Stage - Android Engineer (H/F)", "shortcode": "AB12CD34EF", "employment_type": "Full-time",
+     "country": "France", "city": "Issy-les-Moulineaux", "state": "Île-de-France", "published_on": RECENT,
+     "url": "https://apply.workable.com/j/AB12CD34EF", "shortlink": "https://apply.workable.com/j/AB12CD34EF",
+     "description": "<p>Stage de fin d'études. Développement Android en Kotlin, API REST, tests unitaires, Git.</p>"},
+    {"title": "Embedded Software Engineer", "shortcode": "ZZ00000001", "employment_type": "Internship",
+     "country": "France", "city": "Paris", "state": "Île-de-France", "published_on": RECENT,
+     "shortlink": "https://apply.workable.com/j/ZZ00000001",
+     "description": "<p>Firmware C embarqué sur microcontrôleur STM32, RTOS, Bluetooth Low Energy.</p>"},
+    {"title": "Internship - Software Engineering", "shortcode": "US00000001", "employment_type": "Full-time",
+     "country": "United States", "city": "Boston", "state": "Massachusetts", "published_on": RECENT,
+     "url": "https://apply.workable.com/j/US00000001", "description": "Python, Kubernetes"},
+    {"title": "Senior Android Engineer (H/F)", "shortcode": "SR00000001", "employment_type": "Full-time",
+     "country": "France", "city": "Paris", "published_on": RECENT,
+     "url": "https://apply.workable.com/j/SR00000001", "description": "Kotlin. CDI."}]}
+TEAMTAILOR = f"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:tt="https://teamtailor.com/locations"><channel><title>Skello</title>
+<item><title>Data Analyst Intern - stage</title>
+ <description>&lt;p&gt;Stage de 6 mois. SQL, Python, dbt, tableaux de bord Looker.&lt;/p&gt;</description>
+ <pubDate>{RECENT_RSS}</pubDate><link>https://skello.teamtailor.com/jobs/1-data-analyst-intern</link>
+ <remoteStatus>hybrid</remoteStatus><guid>guid-1</guid>
+ <tt:locations><tt:location><tt:name>Siège</tt:name><tt:city>Paris</tt:city><tt:country>France</tt:country></tt:location>
+ <tt:location><tt:name>Lille</tt:name><tt:city>Lille</tt:city><tt:country>France</tt:country></tt:location></tt:locations>
+ <tt:department>Data</tt:department></item>
+<item><title>Software Engineer Intern</title><description>Python, SQL</description>
+ <pubDate>{RECENT_RSS}</pubDate><link>https://skello.teamtailor.com/jobs/2-software-engineer-intern</link>
+ <guid>guid-2</guid>
+ <tt:locations><tt:location><tt:name>London</tt:name><tt:city>London</tt:city><tt:country>United Kingdom</tt:country></tt:location></tt:locations></item>
+<item><title>Stage - Développeur Python (H/F)</title><description>Stage. Python, Django, PostgreSQL.</description>
+ <pubDate>{OLD_RSS}</pubDate><link>https://skello.teamtailor.com/jobs/3-stage-dev</link><guid>guid-3</guid>
+ <tt:locations><tt:location><tt:city>Paris</tt:city><tt:country>France</tt:country></tt:location></tt:locations></item>
+</channel></rss>"""
+ats_extra = {"on": False}   # les sources Workable et Teamtailor ne répondent que dans leur propre test
 
 
 def handler(req: httpx.Request) -> httpx.Response:
@@ -58,6 +100,10 @@ def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"resultats": FT + extra_ft})
     if "greenhouse" in u and "/datadog/" in u:
         return httpx.Response(200, json=GH)
+    if ats_extra["on"] and "apply.workable.com/api/v1/widget/accounts/withings" in u:
+        return httpx.Response(200, json=WORKABLE)
+    if ats_extra["on"] and u.startswith("https://skello.teamtailor.com/jobs.rss"):
+        return httpx.Response(200, content=TEAMTAILOR.encode(), headers={"content-type": "application/rss+xml"})
     if "generativelanguage" in u:
         key = req.headers["x-goog-api-key"]
         if key.startswith("cle-invalide"):
@@ -730,3 +776,42 @@ def test_own_key_scores_the_rest():
         rows = dict(c.execute(select(db.user_offers.c.offer_id, db.user_offers.c.notified)
                               .where(db.user_offers.c.user_id == u["id"])).all())
     assert rows == {"rq0": 0, "rq1": 2, "rq2": 2, "rq3": 2}
+
+
+def test_workable_and_teamtailor():
+    """Connecteurs Workable et Teamtailor : lecture des réponses, puis filtres habituels du stock commun."""
+    import sources
+    assert {"workable", "teamtailor"} <= set(sources.ATS) and sources.companies()["workable"] and sources.companies()["teamtailor"]
+
+    async def read():
+        async with httpx.AsyncClient(headers=sources.UA) as h:
+            return (await sources.workable(h, {"name": "Withings", "token": "withings"}),
+                    await sources.teamtailor(h, {"name": "Skello", "token": "skello"}))
+    ats_extra["on"] = True
+    try:
+        wk, tt = run(read())
+        a = wk[0]
+        assert (a["source"], a["company"], a["ext_id"]) == ("Withings", "Withings", "AB12CD34EF")
+        assert a["place"] == "Issy-les-Moulineaux, Île-de-France, France" and a["published"] == RECENT
+        assert a["url"] == "https://apply.workable.com/j/AB12CD34EF" and "<p>" not in a["description"] and "Kotlin" in a["description"]
+        # contrat « Internship » : le titre est complété, et sans « url » on prend le lien court
+        assert wk[1]["title"] == "Embedded Software Engineer (stage)" and wk[1]["url"].endswith("/ZZ00000001")
+        b = tt[0]
+        assert (b["source"], b["ext_id"], b["place"]) == ("Skello", "guid-1", "Paris, France / Lille, France")
+        assert b["url"] == "https://skello.teamtailor.com/jobs/1-data-analyst-intern" and "SQL" in b["description"]
+        assert tt[1]["place"] == "London, United Kingdom" and len(tt) == 3
+
+        new = run(collector.collect(force=True))
+        with db.engine.connect() as c:
+            got = {r.title: r for r in c.execute(db.offers.select().where(db.offers.c.source.in_(["Withings", "Skello"])))}
+        # gardées : les stages en France. Écartées : Boston, Londres, le poste senior, l'annonce de plus de 20 jours.
+        assert sorted(got) == ["Data Analyst Intern - stage", "Embedded Software Engineer (stage)",
+                               "Stage - Android Engineer (H/F)"], sorted(got)
+        assert new >= 3 and got["Data Analyst Intern - stage"].published == RECENT
+        assert db.kv_get("src:Withings")["ok"] and db.kv_get("src:Skello")["found"] == 3
+        assert run(collector.collect(force=True)) == 0                                    # aucun doublon au passage suivant
+    finally:
+        ats_extra["on"] = False
+    # une page carrières en panne (404) est signalée dans Administration sans bloquer les autres
+    run(collector.collect(force=True))
+    assert db.kv_get("src:Withings")["ok"] is False and "404" in db.kv_get("src:Withings")["error"]

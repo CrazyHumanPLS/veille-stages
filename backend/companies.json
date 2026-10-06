@@ -1,5 +1,5 @@
 {
- "_aide": "Sources surveillées directement, vérifiées le 05/10/2026, pages Greenhouse complétées le 06/10/2026. Pour en ajouter une : ouvre la page carrières de l'entreprise, regarde son adresse (boards.greenhouse.io/XXX, jobs.lever.co/XXX, jobs.ashbyhq.com/XXX, jobs.smartrecruiters.com/XXX, XXX.wdN.myworkdayjobs.com/SITE) et ajoute une ligne dans la rubrique correspondante. Rubrique rss : sites carrières qui publient un flux RSS (souvent à l'adresse /offre-de-emploi/tous-les-flux-rss.aspx).",
+ "_aide": "Sources surveillées directement, vérifiées le 05/10/2026, pages Greenhouse complétées le 06/10/2026, Workable et Teamtailor ajoutés le 07/10/2026. Pour en ajouter une : ouvre la page carrières de l'entreprise, regarde son adresse (boards.greenhouse.io/XXX, jobs.lever.co/XXX, jobs.ashbyhq.com/XXX, jobs.smartrecruiters.com/XXX, XXX.wdN.myworkdayjobs.com/SITE, apply.workable.com/XXX, XXX.teamtailor.com) et ajoute une ligne dans la rubrique correspondante. Rubrique rss : sites carrières qui publient un flux RSS (souvent à l'adresse /offre-de-emploi/tous-les-flux-rss.aspx).",
  "greenhouse": [
   {
    "name": "Datadog",
@@ -400,6 +400,42 @@
    "host": "ciena.wd5.myworkdayjobs.com",
    "tenant": "ciena",
    "site": "Careers"
+  }
+ ],
+ "workable": [
+  {
+   "name": "Hugging Face",
+   "token": "huggingface"
+  },
+  {
+   "name": "Withings",
+   "token": "withings"
+  },
+  {
+   "name": "Exotec",
+   "token": "exotec"
+  }
+ ],
+ "teamtailor": [
+  {
+   "name": "Skello",
+   "token": "skello"
+  },
+  {
+   "name": "Ornikar",
+   "token": "ornikar"
+  },
+  {
+   "name": "Pasqal",
+   "token": "pasqal"
+  },
+  {
+   "name": "Papernest",
+   "token": "papernest"
+  },
+  {
+   "name": "Indy",
+   "token": "indy"
   }
  ],
  "rss": [
