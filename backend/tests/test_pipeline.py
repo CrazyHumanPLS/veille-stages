@@ -415,3 +415,40 @@ def test_ai_threshold():
     assert all(r.notified for r in mine)             # les autres sont traitées sans IA, pas laissées en attente
     assert quota.view(accounts.by_id(u["id"]))["kinds"]["score"]["used"] == res["scored"]
     assert scoring.user_criteria({"settings": {}})["ai_min_kw"] == 40
+
+
+def test_guards(monkeypatch):
+    """Inscriptions en rafale, blocage de connexion par un tiers, liens d'offres piégés."""
+    from fastapi.testclient import TestClient
+    import main
+    main._hits.clear()
+    monkeypatch.setattr(main, "SIGNUPS_PER_HOUR", 3)
+    body = lambda i: {"email": f"rafale{i}@ex.fr", "password": "motdepasse1", "consent": True}
+    with TestClient(main.app) as c:
+        # 1) changer d'adresse de connexion à chaque essai ne contourne plus le plafond du site
+        codes = [c.post("/api/signup", json=body(i), headers={"X-Forwarded-For": f"9.9.9.{i}"}).status_code for i in range(5)]
+        assert codes == [200, 200, 200, 429, 429], codes
+        # l'en-tête écrit par Cloudflare passe avant celui que le visiteur peut modifier
+        main._hits.clear()
+        monkeypatch.setattr(main, "SIGNUPS_PER_HOUR", 100)
+        codes = [c.post("/api/signup", json=body(10 + i), headers={"CF-Connecting-IP": "5.5.5.5", "X-Forwarded-For": f"8.8.8.{i}"}).status_code
+                 for i in range(7)]
+        assert codes == [200] * 5 + [429] * 2, codes
+        # 2) un tiers qui se trompe exprès ne bloque pas le vrai propriétaire
+        bad = [c.post("/api/login", json={"email": "rafale0@ex.fr", "password": "faux"}, headers={"X-Forwarded-For": "6.6.6.6"}).status_code
+               for _ in range(10)]
+        assert bad[:8] == [401] * 8 and bad[8:] == [429, 429], bad
+        good = {"email": "rafale0@ex.fr", "password": "motdepasse1"}
+        assert c.post("/api/login", json=good, headers={"X-Forwarded-For": "7.7.7.7"}).status_code == 200
+        assert c.post("/api/login", json=good, headers={"X-Forwarded-For": "6.6.6.6"}).status_code == 429
+        # ... mais le nombre total d'essais sur un même compte reste plafonné
+        main._hits.clear()
+        many = [c.post("/api/login", json={"email": "rafale1@ex.fr", "password": "faux"}, headers={"X-Forwarded-For": f"4.4.{i // 250}.{i % 250}"}).status_code
+                for i in range(62)]
+        assert many[:60] == [401] * 60 and many[60:] == [429, 429], many[55:]
+    # 3) un lien qui n'est pas une adresse web n'entre jamais dans le stock
+    raw = {"source": "RSS", "ext_id": "1", "company": "X", "title": "Stage ingénieur réseaux", "place": "Paris",
+           "url": "javascript:alert(1)", "description": "BGP Cisco", "published": "", "geo_ok": False}
+    assert collector.keep(raw, scoring.criteria()) is None
+    assert collector.keep({**raw, "url": "https://ex.fr/1"}, scoring.criteria()) is not None
+    main._hits.clear()

@@ -29,6 +29,8 @@ import sources  # noqa: E402
 
 COLLECT_EVERY = int(os.getenv("COLLECT_EVERY_SEC", "180"))  # 0 = pas de collecte automatique
 APP_NAME = os.getenv("APP_NAME", "Veille Stages")
+SIGNUPS_PER_HOUR = int(os.getenv("SIGNUPS_PER_HOUR", "30"))    # pour tout le site
+SIGNUPS_PER_DAY = int(os.getenv("SIGNUPS_PER_DAY", "120"))
 
 
 async def _loop():
@@ -72,9 +74,23 @@ def throttle(key: str, limit: int, seconds: int, message: str = "Trop d'essais. 
             _hits.pop(k, None)
 
 
+def blocked(key: str, limit: int, seconds: int) -> bool:
+    """Vrai si la limite est déjà atteinte (sans compter un essai de plus)."""
+    now = time.time()
+    return len([t for t in _hits.get(key, []) if now - t < seconds]) >= limit
+
+
+def hit(key: str, seconds: int) -> None:
+    now = time.time()
+    _hits[key] = [t for t in _hits.get(key, []) if now - t < seconds] + [now]
+
+
 def client_ip(request: Request) -> str:
+    # Render passe par Cloudflare, qui écrit lui-même cet en-tête : le visiteur ne peut pas le falsifier.
+    # À défaut, on lit X-Forwarded-For, que le visiteur peut modifier : d'où les plafonds globaux plus bas.
+    cf = request.headers.get("cf-connecting-ip", "").strip()
     fwd = request.headers.get("x-forwarded-for", "")
-    return fwd.split(",")[0].strip() or (request.client.host if request.client else "?")
+    return cf or fwd.split(",")[0].strip() or (request.client.host if request.client else "?")
 
 
 # ---------- réglages du site ----------
@@ -166,6 +182,12 @@ async def signup(body: Signup, request: Request, bg: BackgroundTasks):
     if not body.consent:
         raise HTTPException(400, "Il faut accepter les conditions d'utilisation des données pour créer un compte.")
     throttle("signup:" + client_ip(request), 5, 3600, "Trop d'inscriptions depuis cette connexion. Réessaie plus tard.")
+    # Plafonds pour tout le site : ils tiennent même si quelqu'un maquille son adresse de connexion.
+    busy = "Beaucoup d'inscriptions en ce moment. Réessaie dans une heure."
+    if blocked("signup-all-day", SIGNUPS_PER_DAY, 86400):
+        raise HTTPException(429, busy)
+    throttle("signup-all-hour", SIGNUPS_PER_HOUR, 3600, busy)
+    hit("signup-all-day", 86400)
     owner = accounts.clean_email(os.getenv("ADMIN_EMAIL", ""))
     is_admin = email == owner if owner else accounts.count() == 0
     u = await asyncio.to_thread(accounts.create, email, body.name, body.password, is_admin)
@@ -178,11 +200,19 @@ async def signup(body: Signup, request: Request, bg: BackgroundTasks):
 @app.post("/api/login")
 async def login(body: Login, request: Request):
     email = accounts.clean_email(body.email)
-    throttle(f"login:{client_ip(request)}", 20, 900)
-    throttle(f"login:{email}", 8, 900)
+    ip = client_ip(request)
+    throttle(f"login:{ip}", 20, 900)
+    # On ne compte que les ÉCHECS. 8 par personne et par compte : un tiers ne peut donc pas bloquer le vrai
+    # propriétaire en se trompant exprès. 60 par heure et par compte, toutes connexions confondues : limite
+    # ce qu'un attaquant peut essayer en changeant d'adresse.
+    mine, everyone = f"loginfail:{email}:{ip}", f"loginfail:{email}"
+    if blocked(mine, 8, 900) or blocked(everyone, 60, 3600):
+        raise HTTPException(429, "Trop d'essais. Réessaie dans quelques minutes.")
     u = accounts.by_email(email)
     ok = await asyncio.to_thread(security.check_password, body.password, u["pw_hash"] if u else "scrypt$00$00")
     if not u or not ok:
+        hit(mine, 900)
+        hit(everyone, 3600)
         raise HTTPException(401, "Adresse ou mot de passe incorrect.")
     if u["disabled"]:
         raise HTTPException(403, "Ce compte a été désactivé.")

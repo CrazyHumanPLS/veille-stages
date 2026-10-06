@@ -52,8 +52,8 @@ def _state(name: str, ok: bool, found: int = 0, new: int = 0, error: str = "") -
 
 def keep(raw: dict, crit: dict) -> dict | None:
     """Applique les filtres. Renvoie la ligne prête à enregistrer, ou None si l'offre est écartée."""
-    if not raw["title"] or not raw["url"]:
-        return None
+    if not raw["title"] or not raw["url"].lower().startswith(("https://", "http://")):
+        return None   # pas de titre, ou lien qui n'est pas une adresse web (jamais de « javascript: »)
     if not scoring.is_internship(raw["title"], raw["description"]):
         return None
     if not raw["geo_ok"] and not scoring.is_idf(raw["place"]):

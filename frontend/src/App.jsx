@@ -13,6 +13,7 @@ const pubLabel = d => {
   return `mise en ligne le ${d.slice(8, 10)}/${d.slice(5, 7)} (${rel})`;
 };
 const tone = s => (s >= 75 ? "hi" : s >= 55 ? "mid" : "lo");
+const web = u => (/^https?:\/\//i.test(u || "") ? u : undefined);   // n'ouvre jamais autre chose qu'une adresse web
 
 function Privacy({ info }) {
   return (<div className="card privacy">
@@ -120,7 +121,7 @@ function Auth({ info, onOk }) {
 const STATES = [["new", "Nouvelles"], ["saved", "Gardées"], ["applied", "Postulées"], ["hidden", "Masquées"], ["all", "Toutes"]];
 const STATE_DONE = { saved: "Offre gardée", hidden: "Offre masquée", applied: "Candidature notée dans le suivi", new: "Offre remise dans les nouvelles" };
 
-function Feed({ me, onTrack, onAnalyse, status, refreshStatus, reloadKey, focusId, toast }) {
+function Feed({ me, onTrack, onUntrack, onAnalyse, status, refreshStatus, reloadKey, focusId, toast }) {
   const [list, setList] = useState(null);
   const [f, setF] = useState({ state: "new", min: 0, q: "", hours: 0 });
   const [sort, setSort] = useState("seen");
@@ -134,10 +135,10 @@ function Feed({ me, onTrack, onAnalyse, status, refreshStatus, reloadKey, focusI
   useEffect(() => { load(); const t = setInterval(() => { load(); refreshStatus(); }, 60000); return () => clearInterval(t); }, [load, reloadKey]);
   const patch = (id, state) => api(`/api/offers/${id}`, { method: "PATCH", body: JSON.stringify({ state }) });
   // L'offre quitte la liste tout de suite ; le message propose d'annuler pendant quelques secondes.
-  const setState = async (o, state) => {
+  const setState = async (o, state, alsoUndo) => {
     const before = o.state;
     setList(l => l && (f.state === "all" ? l.map(x => x.id === o.id ? { ...x, state } : x) : l.filter(x => x.id !== o.id)));
-    try { await patch(o.id, state); toast(STATE_DONE[state], async () => { await patch(o.id, before); load(); refreshStatus(); }); }
+    try { await patch(o.id, state); toast(STATE_DONE[state], async () => { await patch(o.id, before); if (alsoUndo) await alsoUndo(); load(); refreshStatus(); }); }
     catch (e) { setErr(e.message); load(); }
     refreshStatus();
   };
@@ -180,16 +181,16 @@ function Feed({ me, onTrack, onAnalyse, status, refreshStatus, reloadKey, focusI
       <article className={`offer${focusId === o.id ? " focus" : ""}`} key={o.id} id={`offer-${o.id}`}>
         <Score o={o} />
         <div className="body">
-          <h2 className="otitle"><a href={o.url} target="_blank" rel="noopener noreferrer">{o.title}</a></h2>
+          <h2 className="otitle"><a href={web(o.url)} target="_blank" rel="noopener noreferrer">{o.title}</a></h2>
           <p className="ometa"><b>{o.company || "Entreprise non précisée"}</b><span>{o.place || "lieu non précisé"}</span><span>via {o.source}</span></p>
           {o.ai_reason ? <p className="why">{o.ai_reason}</p> : o.excerpt && <p className="excerpt">{o.excerpt.slice(0, 200)}…</p>}
           {me.cv > 1 && o.cv && <span className="tag">CV à envoyer : {me.cv_labels?.[o.cv] || o.cv}</span>}
           {o.dup_note && <p className="warn">{o.dup_note}</p>}
           <p className="odate">{pubLabel(o.published)}, détectée {ago(o.first_seen)}</p>
           <div className="actions">
-            <a className="btn" href={o.url} target="_blank" rel="noopener noreferrer">Voir l'offre</a>
+            <a className="btn" href={web(o.url)} target="_blank" rel="noopener noreferrer">Voir l'offre</a>
             <button className="btn ghost" onClick={() => analyse(o)}>Lettre et analyse</button>
-            {o.state !== "applied" && <button className="btn ghost" onClick={async () => { await onTrack({ company: o.company, job: o.title, url: o.url, status: 1 }); setState(o, "applied"); }}>J'ai postulé</button>}
+            {o.state !== "applied" && <button className="btn ghost" onClick={async () => { const id = await onTrack({ company: o.company, job: o.title, url: o.url, status: 1 }); setState(o, "applied", () => onUntrack(id)); }}>J'ai postulé</button>}
             {o.state !== "saved" && o.state !== "applied" && <button className="btn ghost" onClick={() => setState(o, "saved")}>Garder</button>}
             {o.state !== "hidden" ? <button className="btn quiet" onClick={() => setState(o, "hidden")}>Masquer</button>
               : <button className="btn quiet" onClick={() => setState(o, "new")}>Remettre</button>}
@@ -253,7 +254,7 @@ function Assistant({ me, setMe, offer, setOffer, cv, setCv, goSettings, ctx, onB
     {ctx && <div className="card ctx">
       <div><strong>{ctx.title}</strong><div className="mute">{ctx.company || "Entreprise non précisée"}{ctx.state === "saved" && " · gardée"}{ctx.state === "applied" && " · postulée"}</div></div>
       <div className="row">
-        <a className="btn" href={ctx.url} target="_blank" rel="noopener noreferrer">Voir l'offre</a>
+        <a className="btn" href={web(ctx.url)} target="_blank" rel="noopener noreferrer">Voir l'offre</a>
         {ctx.state !== "saved" && ctx.state !== "applied" && <button className="btn ghost" onClick={() => onState("saved")}>Garder</button>}
         {ctx.state !== "applied" && <button className="btn ghost" onClick={() => onState("applied")}>J'ai postulé</button>}
       </div>
@@ -322,13 +323,13 @@ const hashTab = () => { const h = window.location.hash.slice(1); return TABS.inc
 export default function App() {
   const [me, setMeRaw] = useState(undefined);   // undefined : chargement, null : déconnecté
   const [info, setInfo] = useState(null);
-  const [tab, setTabRaw] = useState(hashTab);
+  const [tabAsked, setTabRaw] = useState(hashTab);
   const [ctx, setCtx] = useState(null);          // offre ouverte dans l'assistant
   const [feedKey, setFeedKey] = useState(0);     // augmente pour recharger la liste des offres
   const [toastMsg, setToastMsg] = useState(null);
   const toastTimer = useRef(0);
   const showToast = useCallback((text, undo) => { clearTimeout(toastTimer.current); setToastMsg({ text, undo }); toastTimer.current = setTimeout(() => setToastMsg(null), 6000); }, []);
-  const tabRef = useRef(tab);
+  const tabRef = useRef(tabAsked);
   const feedScroll = useRef(0);                  // position de lecture dans la liste des offres
   const setTab = t => { if (t !== tabRef.current) window.location.hash = t; };
   useEffect(() => {
@@ -341,10 +342,10 @@ export default function App() {
   }, []);
   // En revenant sur les offres, on retrouve l'endroit exact où l'on s'était arrêté.
   useEffect(() => {
-    const y = tab === "feed" ? feedScroll.current : 0;
+    const y = tabAsked === "feed" ? feedScroll.current : 0;
     const t = setTimeout(() => window.scrollTo(0, y), 0);
     return () => clearTimeout(t);
-  }, [tab]);
+  }, [tabAsked]);
   const [apps, setApps] = useState([]);
   const [offer, setOffer] = useState("");
   const [cv, setCv] = useState("");
@@ -363,7 +364,8 @@ export default function App() {
   useEffect(() => { if (info?.name) document.title = info.name; }, [info]);
   if (me === undefined) return <div className="loading"><div><div className="brand" style={{ justifyContent: "center", fontSize: "1.4rem" }}><Mark />{info?.name || "Veille Stages"}</div><p className="mute">Chargement… (jusqu'à une minute si le serveur dormait)</p></div></div>;
   if (!me) return <Auth info={info} onOk={start} />;
-  const track = async a => { await post("/api/applications", a); reload(); };
+  const track = async a => { const r = await post("/api/applications", a); reload(); return r.id; };
+  const untrack = async id => { if (id) await api(`/api/applications/${id}`, { method: "DELETE" }); reload(); };
   const toAI = (t, k = "", o = null) => { setOffer(t); setCv(k); setCtx(o); setTab("ai"); };
   const setCtxState = async state => {
     if (!ctx) return;
@@ -376,6 +378,7 @@ export default function App() {
   const todo = [!me.cv && ["importer ton CV", "profile"], !hasAlerts && ["brancher tes alertes", "settings"]].filter(Boolean);
   const tabs = [["feed", "Offres"], ["track", `Suivi (${apps.length})`], ["ai", "Assistant"], ["profile", "Profil"], ["settings", "Réglages"]];
   if (me.is_admin) tabs.push(["admin", "Administration"]);
+  const tab = tabAsked === "privacy" || tabs.some(([k]) => k === tabAsked) ? tabAsked : "feed";
   const out = () => { setToken(null); setMeRaw(null); };
   return (<div className="app">
     <div className="topbar">
@@ -385,7 +388,7 @@ export default function App() {
     </div>
     <div className="wrap">
       {todo.length > 0 && <p className="note">Pour finir l'installation, il reste à {todo.map(([l, t], i) => <span key={t}>{i > 0 && " et à "}<a href="#" onClick={e => { e.preventDefault(); setTab(t); }}>{l}</a></span>)}.</p>}
-      <div hidden={tab !== "feed"}><Feed me={me} onTrack={track} onAnalyse={toAI} status={status} refreshStatus={refreshStatus} reloadKey={feedKey} focusId={ctx?.id} toast={showToast} /></div>
+      <div hidden={tab !== "feed"}><Feed me={me} onTrack={track} onUntrack={untrack} onAnalyse={toAI} status={status} refreshStatus={refreshStatus} reloadKey={feedKey} focusId={ctx?.id} toast={showToast} /></div>
       {tab === "track" && <Tracker apps={apps} reload={reload} />}
       {tab === "ai" && <Assistant me={me} setMe={setMe} offer={offer} setOffer={setOffer} cv={cv} setCv={setCv} goSettings={goSettings} ctx={ctx} onBack={() => setTab("feed")} onState={setCtxState} />}
       {tab === "profile" && <Profile me={me} reloadMe={reloadMe} goSettings={goSettings} />}
