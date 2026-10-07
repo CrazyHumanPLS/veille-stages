@@ -14,7 +14,8 @@ import xml.etree.ElementTree as ET
 
 import httpx
 
-from scoring import strip_html
+import domains as dom
+from scoring import is_internship, strip_html
 
 UA = {"User-Agent": "veille-stages/1.0 (veille d'offres de stage)"}
 HERE = pathlib.Path(__file__).parent
@@ -122,15 +123,35 @@ async def adzuna(h: httpx.AsyncClient, queries: list[str]) -> list[dict]:
 
 
 # ---------- Pages carrières (API publiques des outils de recrutement) ----------
-async def greenhouse(h: httpx.AsyncClient, c: dict) -> list[dict]:
-    r = await h.get(f"https://boards-api.greenhouse.io/v1/boards/{c['token']}/jobs", params={"content": "true"})
-    r.raise_for_status()
+_gh_done: set[tuple[str, str]] = set()   # annonces dont le détail a déjà été lu depuis le démarrage
+GH_DETAILS_PER_RUN = 25
 
-    def parse():   # grosses réponses (plusieurs Mo) : lues dans un fil à part pour ne pas figer le site
-        return [_offer(c["name"], j.get("id"), c["name"], j.get("title"), (j.get("location") or {}).get("name", ""),
-                       j.get("absolute_url"), j.get("content", ""), j.get("first_published") or j.get("updated_at", ""))
-                for j in r.json().get("jobs", [])]
-    return await asyncio.to_thread(parse)
+
+async def greenhouse(h: httpx.AsyncClient, c: dict) -> list[dict]:
+    """Deux temps, pour la mémoire (512 Mo sur Render gratuit) : la liste SANS le texte des annonces (légère),
+    puis le texte des seuls stages en France pas encore lus. Avant, on téléchargeait le texte de toutes les
+    annonces de l'entreprise (plusieurs Mo par page carrières) : c'est ce qui saturait la mémoire."""
+    base = f"https://boards-api.greenhouse.io/v1/boards/{c['token']}/jobs"
+    r = await h.get(base)
+    r.raise_for_status()
+    out = []
+    for j in r.json().get("jobs", []):
+        place = (j.get("location") or {}).get("name", "")
+        ref = (c["token"], str(j.get("id")))
+        if ref in _gh_done or not is_internship(j.get("title") or "", "") or not dom.in_france(place):
+            continue
+        if len(out) >= GH_DETAILS_PER_RUN:
+            break   # la suite au prochain passage
+        d = await h.get(f"{base}/{j.get('id')}")
+        if d.status_code != 200:
+            continue
+        full = d.json()
+        _gh_done.add(ref)
+        if len(_gh_done) > 50000:
+            _gh_done.clear()
+        out.append(_offer(c["name"], j.get("id"), c["name"], j.get("title"), place, j.get("absolute_url"),
+                          full.get("content", ""), j.get("first_published") or j.get("updated_at", "")))
+    return out
 
 
 async def lever(h: httpx.AsyncClient, c: dict) -> list[dict]:
@@ -202,63 +223,8 @@ async def workday(h: httpx.AsyncClient, c: dict) -> list[dict]:
     return out
 
 
-async def workable(h: httpx.AsyncClient, c: dict) -> list[dict]:
-    """Page carrières apply.workable.com/XXX : même point d'accès public que le module à intégrer de Workable."""
-    r = await h.get(f"https://apply.workable.com/api/v1/widget/accounts/{c['token']}", params={"details": "true"})
-    r.raise_for_status()
-
-    def parse():   # descriptions complètes : lues dans un fil à part pour ne pas figer le site
-        out = []
-        for j in r.json().get("jobs", []):
-            place = ", ".join(dict.fromkeys(x for x in (j.get("city"), j.get("state"), j.get("country")) if x))
-            title = j.get("title", "")
-            if "intern" in (j.get("employment_type") or "").lower():
-                title += " (stage)"
-            code = j.get("shortcode") or j.get("code") or ""
-            url = j.get("url") or j.get("shortlink") or (f"https://apply.workable.com/j/{code}" if code else "")
-            out.append(_offer(c["name"], code or title, c["name"], title, place, url, j.get("description", ""),
-                              j.get("published_on") or j.get("created_at", "")))
-        return out
-    return await asyncio.to_thread(parse)
-
-
-def _tt_place(item) -> str:
-    """Lieux d'une offre Teamtailor : <tt:locations><tt:location><tt:city/><tt:country/>… (plusieurs possibles)."""
-    places = []
-    for loc in item.iter():
-        if loc.tag.split("}")[-1] != "location":
-            continue
-        city, country = _txt(loc, "city") or _txt(loc, "name"), _txt(loc, "country")
-        label = ", ".join(x for x in (city, country) if x)
-        if label and label not in places:
-            places.append(label)
-    return " / ".join(places[:4])
-
-
-async def teamtailor(h: httpx.AsyncClient, c: dict) -> list[dict]:
-    """Flux RSS public d'un site carrières Teamtailor (XXX.teamtailor.com/jobs.rss). « url » remplace l'adresse
-    quand l'entreprise utilise son propre nom de domaine."""
-    r = await h.get(c.get("url") or f"https://{c['token']}.teamtailor.com/jobs.rss")
-    r.raise_for_status()
-    if len(r.content) > 5_000_000:
-        raise RuntimeError("flux trop volumineux (plus de 5 Mo), ignoré")
-
-    def parse():
-        out = []
-        for it in (n for n in ET.fromstring(r.content).iter() if n.tag.split("}")[-1] == "item"):
-            link = _txt(it, "link")
-            place = _tt_place(it)
-            if not place and _txt(it, "remoteStatus") == "fully":
-                place = "Remote"
-            out.append(_offer(c["name"], _txt(it, "guid") or link, c["name"], strip_html(_txt(it, "title")), place,
-                              link, _txt(it, "description"), _txt(it, "pubDate")))
-        return out
-    return await asyncio.to_thread(parse)
-
-
 ATS = {"greenhouse": greenhouse, "lever": lever, "ashby": ashby,
-       "smartrecruiters": smartrecruiters, "workday": workday,
-       "workable": workable, "teamtailor": teamtailor}
+       "smartrecruiters": smartrecruiters, "workday": workday}
 
 
 # ---------- Flux RSS / Atom (ex. alerte Google transformée en flux) ----------

@@ -106,8 +106,9 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   `companies.json` restent surtout des entreprises du numérique.
 - Sources (06/10, 23 h) : `companies.json` passe de 43 à 96 sources (52 pages Greenhouse vérifiées une à une avec au
   moins une offre en France, plus le flux RSS de l'AFJV). `collector.py` lit au plus 6 sources à la fois
-  (`COLLECT_PARALLEL`) pour ménager la mémoire de Render. Pistes vérifiées mais non faites : The Muse, Jooble et Careerjet (clé à demander) ; Workable et
-  Teamtailor sont faits (voir plus bas). Il n'existe pas de source gratuite couvrant « toutes les entreprises de France ».
+  (`COLLECT_PARALLEL`) pour ménager la mémoire de Render. Pistes vérifiées mais non faites : connecteurs Workable
+  (`apply.workable.com/api/v1/widget/accounts/XXX`) et Teamtailor (`XXX.teamtailor.com/jobs.rss`), The Muse, Jooble
+  et Careerjet (clé à demander). Il n'existe pas de source gratuite couvrant « toutes les entreprises de France ».
   L'utilisateur a demandé d'économiser son quota Claude : pas d'agents de recherche en série.
 - Pannes Render « health check timed out » (07/10) : la collecte tourne dans le même processus que le site et le
   tri des offres (calcul bloquant) figeait le serveur. Corrigé : `store`, `sync_user`, `load_seen`, `prune` et la
@@ -124,16 +125,12 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
 - Clé personnelle (07/10) : en l'enregistrant, les offres restées sans note de l'IA (au-dessus de `ai_min_kw`, non
   masquées) repassent en file (`collector.requeue_unscored`) et sont notées, 40 par passage ; le plafond
   `FIRST_RUN_AI` ne s'applique plus à qui a sa propre clé. Ces offres peuvent déclencher une alerte ou un récapitulatif.
-- Connecteurs Workable et Teamtailor (07/10) : `sources.workable` (`apply.workable.com/api/v1/widget/accounts/XXX?details=true`)
-  et `sources.teamtailor` (`XXX.teamtailor.com/jobs.rss`, lieux lus dans `tt:locations` ; champ `url` facultatif pour un
-  site carrières sur son propre nom de domaine). Ajoutés à `sources.ATS`, donc lus comme les autres pages carrières
-  (rubriques `workable` et `teamtailor` de `companies.json`). 8 sources ajoutées (96 → 104), chacune ouverte le 07/10 :
-  Hugging Face, Withings, Exotec (Workable) ; Skello, Ornikar, Pasqal, Papernest, Indy (Teamtailor). Le format réel des
-  deux réponses a été lu une fois (Hugging Face, career.teamtailor.com) ; le code lui-même n'a tourné qu'avec des
-  réponses simulées. Trouver d'autres comptes se fait à la main (deviner l'identifiant échoue 3 fois sur 4).
-  Les dates des fausses annonces des tests sont maintenant calculées d'après le jour du test (sinon tout échouait
-  après le 25/10/2026 à cause de la limite de 20 jours).
-- 14 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
+- Mémoire (07/10, 15 h) : Render signalait « Ran out of memory (512MB) » depuis l'ajout des 52 pages Greenhouse,
+  car `content=true` téléchargeait le texte de toutes les annonces (plusieurs Mo par entreprise). `sources.greenhouse`
+  lit maintenant la liste sans texte, puis le détail des seuls stages en France pas encore lus (25 par passage,
+  mémoire `_gh_done`). Conséquence : un stage Greenhouse dont le titre ne dit ni « stage » ni « intern » n'est plus vu.
+  Règle : ne jamais charger le texte complet de toutes les annonces d'une source.
+- 13 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.
 
