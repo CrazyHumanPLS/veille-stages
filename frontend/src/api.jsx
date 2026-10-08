@@ -19,7 +19,7 @@ export async function api(path, opts = {}) {
   const tok = getToken();
   if (tok) headers.Authorization = `Bearer ${tok}`;
   const r = await fetch(path, { ...opts, headers });
-  const open = ["/api/login", "/api/signup", "/api/public"].includes(path);
+  const open = ["/api/login", "/api/signup", "/api/public"].includes(path) || path.startsWith("/api/public/");
   if (r.status === 401 && !open) { onLogout(); throw new Error("Session expirée, reconnecte-toi."); }
   if (!r.ok) {
     const e = await r.json().catch(() => ({}));

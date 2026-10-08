@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, post, put, ago, Dot, List, getToken, setToken, setOnLogout, useAction } from "./api.jsx";
 import Settings from "./Settings.jsx";
 import Admin from "./Admin.jsx";
+import Board from "./Board.jsx";
 import * as audience from "./analytics.js";
 
 const STATUS = ["À postuler", "Postulé", "Relancé", "Entretien", "Offre", "Refus"];
@@ -182,6 +183,7 @@ function Auth({ info, onOk, onCookies }) {
       <section className="pitch">
         <h1>Arrête de chercher. Les bons stages arrivent tout seuls.</h1>
         <p className="lead">On surveille les sites carrières jour et nuit. Chaque offre est notée d'après ton CV, et les meilleures arrivent sur ton téléphone dès leur mise en ligne.</p>
+        <p><a className="btn ghost" href="#offres">Voir les offres de la semaine, sans compte</a></p>
         <div className="demo" aria-hidden="true">
           <div className="ping"><b>Nouvelle offre, 92 sur 100</b><span>Stage ingénieur réseaux et sécurité, à l'instant</span></div>
           <div className="sheet">{DEMO.map(d => (
@@ -451,12 +453,15 @@ function Profile({ me, reloadMe, goSettings }) {
 const TABS = ["feed", "track", "ai", "profile", "settings", "admin", "privacy"];
 const hashLink = () => { const m = window.location.hash.match(/^#(verify|reset)=([\w.]+)$/); return m ? { kind: m[1], token: m[2] } : null; };
 const clearHash = () => { try { window.history.replaceState(null, "", window.location.pathname); } catch { window.location.hash = ""; } };
+// Vitrine publique : #offres ou #offres/data. null = on n'y est pas, "" = domaine au choix du site.
+const hashBoard = () => { const m = window.location.hash.match(/^#offres(?:\/([a-z]{1,20}))?$/); return m ? (m[1] || "") : null; };
 const hashTab = () => { const h = window.location.hash.slice(1); return TABS.includes(h) ? h : "feed"; };
 
 export default function App() {
   const [me, setMeRaw] = useState(undefined);   // undefined : chargement, null : déconnecté
   const [info, setInfo] = useState(null);
   const [tabAsked, setTabRaw] = useState(hashTab);
+  const [board, setBoard] = useState(hashBoard);
   const [ctx, setCtx] = useState(null);          // offre ouverte dans l'assistant
   const [feedKey, setFeedKey] = useState(0);     // augmente pour recharger la liste des offres
   const [link, setLink] = useState(hashLink);   // lien reçu par e-mail, s'il y en a un dans l'adresse
@@ -479,7 +484,7 @@ export default function App() {
   const setTab = t => { if (t !== tabRef.current) window.location.hash = t; };
   useEffect(() => {
     try { window.history.scrollRestoration = "manual"; } catch { /* navigateur ancien */ }
-    const onHash = () => { tabRef.current = hashTab(); setTabRaw(tabRef.current); };
+    const onHash = () => { tabRef.current = hashTab(); setTabRaw(tabRef.current); setBoard(hashBoard()); };
     const onScroll = () => { if (tabRef.current === "feed") feedScroll.current = window.scrollY; };
     window.addEventListener("hashchange", onHash);
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -491,7 +496,7 @@ export default function App() {
     const t = setTimeout(() => window.scrollTo(0, y), 0);
     return () => clearTimeout(t);
   }, [tabAsked]);
-  useEffect(() => { audience.page(me ? tabAsked : "accueil"); }, [tabAsked, !!me, askCookies]);
+  useEffect(() => { audience.page(board !== null ? "offres" : me ? tabAsked : "accueil"); }, [tabAsked, !!me, askCookies, board]);
   const [apps, setApps] = useState([]);
   const [offer, setOffer] = useState("");
   const [cv, setCv] = useState("");
@@ -507,7 +512,8 @@ export default function App() {
     if (!getToken()) return setMeRaw(null);
     api("/api/me").then(start).catch(() => setMeRaw(null));
   }, []);
-  useEffect(() => { if (info?.name) document.title = info.name; }, [info]);
+  useEffect(() => { if (info?.name && board === null) document.title = info.name; }, [info, board]);
+  if (board !== null) return <><Board info={info} domain={board} logged={!!me} onJoin={() => { window.location.hash = me ? "feed" : ""; window.scrollTo(0, 0); }} />{consent}</>;
   if (me === undefined) return <div className="loading"><div><div className="brand" style={{ justifyContent: "center", fontSize: "1.4rem" }}><Mark />{info?.name || "Veille Stages"}</div><p className="mute">Chargement… (jusqu'à une minute si le serveur dormait)</p></div></div>;
   if (link?.kind === "reset") return <NewPassword info={info} token={link.token} onOk={m => { clearHash(); setLink(null); start(m); }} onCancel={() => { clearHash(); setLink(null); }} />;
   if (!me) return <>{flash && <p className="note flash">{flash}</p>}<Auth info={info} onOk={start} onCookies={() => setAskCookies(true)} />{consent}</>;

@@ -47,8 +47,9 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
 - `backend/quota.py` : qui paie l'IA, limites, consommation du jour.
 - `backend/scoring.py`, `sources.py`, `ai.py`, `notify.py`, `cvstore.py`, `db.py` : repris de `stage-app`, adaptés
   pour recevoir l'utilisateur ou sa clé en paramètre.
+- `backend/board.py` : vitrine publique (offres de la semaine par domaine) et textes de publications.
 - `backend/tests/test_pipeline.py` : tests avec réseau simulé (`python -m pytest -q` dans `backend`).
-- `frontend/src/` : `App.jsx` (connexion, offres, suivi, assistant, profil), `Settings.jsx`, `Admin.jsx`, `api.jsx`.
+- `frontend/src/` : `App.jsx` (connexion, offres, suivi, assistant, profil), `Board.jsx` (vitrine publique), `Settings.jsx`, `Admin.jsx`, `api.jsx`.
 
 ## Règles de travail (reprises de stage-app)
 
@@ -106,9 +107,8 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   `companies.json` restent surtout des entreprises du numérique.
 - Sources (06/10, 23 h) : `companies.json` passe de 43 à 96 sources (52 pages Greenhouse vérifiées une à une avec au
   moins une offre en France, plus le flux RSS de l'AFJV). `collector.py` lit au plus 6 sources à la fois
-  (`COLLECT_PARALLEL`) pour ménager la mémoire de Render. Pistes vérifiées mais non faites : connecteurs Workable
-  (`apply.workable.com/api/v1/widget/accounts/XXX`) et Teamtailor (`XXX.teamtailor.com/jobs.rss`), The Muse, Jooble
-  et Careerjet (clé à demander). Il n'existe pas de source gratuite couvrant « toutes les entreprises de France ».
+  (`COLLECT_PARALLEL`) pour ménager la mémoire de Render. Pistes vérifiées mais non faites : The Muse, Jooble et Careerjet (clé à demander) ; Workable et
+  Teamtailor sont faits (voir plus bas). Il n'existe pas de source gratuite couvrant « toutes les entreprises de France ».
   L'utilisateur a demandé d'économiser son quota Claude : pas d'agents de recherche en série.
 - Pannes Render « health check timed out » (07/10) : la collecte tourne dans le même processus que le site et le
   tri des offres (calcul bloquant) figeait le serveur. Corrigé : `store`, `sync_user`, `load_seen`, `prune` et la
@@ -130,7 +130,28 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   lit maintenant la liste sans texte, puis le détail des seuls stages en France pas encore lus (25 par passage,
   mémoire `_gh_done`). Conséquence : un stage Greenhouse dont le titre ne dit ni « stage » ni « intern » n'est plus vu.
   Règle : ne jamais charger le texte complet de toutes les annonces d'une source.
-- 13 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
+- Connecteurs Workable et Teamtailor (07/10, refaits le 08/10) : `sources.workable` et `sources.teamtailor`, ajoutés à
+  `sources.ATS` (rubriques `workable` et `teamtailor` de `companies.json`, 8 sources : Hugging Face, Withings, Exotec ;
+  Skello, Ornikar, Pasqal, Papernest, Indy). Workable suit la règle mémoire : liste sans texte
+  (`apply.workable.com/api/v1/widget/accounts/XXX`), puis `?details=true` seulement s'il y a un stage en France pas
+  encore lu (`_wk_done`). Teamtailor : flux `XXX.teamtailor.com/jobs.rss` (léger, plafonné à 5 Mo), lieux dans
+  `tt:locations`, champ `url` facultatif pour un domaine propre. Format réel lu une fois ; le code n'a tourné qu'avec
+  des réponses simulées. **Incident** : la première version (07/10 matin) a été effacée de `sources.py`, des tests et de
+  ce fichier par la correction mémoire de 15 h, faite dans une autre conversation à partir d'une copie plus ancienne ;
+  `companies.json` gardait les rubriques, donc elles étaient ignorées sans erreur. Règle : toujours relire les fichiers
+  du PC juste avant de les modifier, ne jamais repartir d'une copie de la conversation.
+- Dates des fausses annonces des tests calculées d'après le jour du test (sinon tout échouait après le 25/10/2026).
+- Vitrine publique et publications (08/10) : objectif de l'utilisateur = 300 à 500 € par mois en ligne pour financer
+  l'application. Plan retenu : contenu tiré du stock → page publique → inscriptions → Premium. `backend/board.py`
+  calcule, au plus toutes les 10 minutes, les offres de la semaine par domaine (score par mots-clés du domaine ≥ 40,
+  nouveautés de 48 h d'abord). `GET /api/public/offers?domain=&region=` (sans compte, 8 offres, 60 demandes par minute
+  et par adresse) ; page `/#offres` et `/#offres/<domaine>` (`frontend/src/Board.jsx`, lien depuis la page d'accueil).
+  `GET /api/admin/posts` + Administration → « Publications du jour » : textes X (280 caractères au plus), LinkedIn et
+  script de vidéo, sans IA, une offre par entreprise, bouton Copier. L'utilisateur relit et publie lui-même : Claude ne
+  publie rien sur ses comptes sans validation. Écartés : recopier des tweets viraux, dropshipping, Comeup/Malt (pas de
+  clients sans historique). À vérifier par l'utilisateur avant de faire payer : statut de micro-entrepreneur et
+  conditions d'usage d'Adzuna et de France Travail (affichage public et usage commercial).
+- 15 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.
 

@@ -223,8 +223,89 @@ async def workday(h: httpx.AsyncClient, c: dict) -> list[dict]:
     return out
 
 
+_wk_done: set[tuple[str, str]] = set()   # annonces Workable déjà lues depuis le démarrage
+
+
+async def workable(h: httpx.AsyncClient, c: dict) -> list[dict]:
+    """Page carrières apply.workable.com/XXX (point d'accès public du module à intégrer de Workable).
+    Même principe que Greenhouse, pour la mémoire : la liste SANS les textes d'abord ; les textes ne sont
+    demandés que s'il y a un stage en France pas encore lu."""
+    base = f"https://apply.workable.com/api/v1/widget/accounts/{c['token']}"
+    r = await h.get(base)
+    r.raise_for_status()
+
+    def wanted(j) -> bool:
+        place = ", ".join(x for x in (j.get("city"), j.get("country")) if x)
+        intern = "intern" in (j.get("employment_type") or "").lower()
+        return (intern or is_internship(j.get("title") or "", "")) and dom.in_france(place)
+
+    todo = {j.get("shortcode") for j in r.json().get("jobs", [])
+            if j.get("shortcode") and wanted(j) and (c["token"], j["shortcode"]) not in _wk_done}
+    if not todo:
+        return []
+    r = await h.get(base, params={"details": "true"})
+    r.raise_for_status()
+    if len(r.content) > 5_000_000:
+        raise RuntimeError("réponse trop volumineuse (plus de 5 Mo), ignorée")
+
+    def parse():
+        out = []
+        for j in r.json().get("jobs", []):
+            code = j.get("shortcode")
+            if code not in todo:
+                continue
+            place = ", ".join(dict.fromkeys(x for x in (j.get("city"), j.get("state"), j.get("country")) if x))
+            title = j.get("title", "")
+            if "intern" in (j.get("employment_type") or "").lower():
+                title += " (stage)"
+            url = j.get("url") or j.get("shortlink") or f"https://apply.workable.com/j/{code}"
+            out.append(_offer(c["name"], code, c["name"], title, place, url, j.get("description", ""),
+                              j.get("published_on") or j.get("created_at", "")))
+        return out
+    out = await asyncio.to_thread(parse)
+    _wk_done.update((c["token"], o["ext_id"]) for o in out)
+    if len(_wk_done) > 50000:
+        _wk_done.clear()
+    return out
+
+
+def _tt_place(item) -> str:
+    """Lieux d'une offre Teamtailor : <tt:locations><tt:location><tt:city/><tt:country/>… (plusieurs possibles)."""
+    places = []
+    for loc in item.iter():
+        if loc.tag.split("}")[-1] != "location":
+            continue
+        city, country = _txt(loc, "city") or _txt(loc, "name"), _txt(loc, "country")
+        label = ", ".join(x for x in (city, country) if x)
+        if label and label not in places:
+            places.append(label)
+    return " / ".join(places[:4])
+
+
+async def teamtailor(h: httpx.AsyncClient, c: dict) -> list[dict]:
+    """Flux RSS public d'un site carrières Teamtailor (XXX.teamtailor.com/jobs.rss). « url » remplace l'adresse
+    quand l'entreprise utilise son propre nom de domaine. Flux léger (quelques dizaines d'annonces), plafonné à 5 Mo."""
+    r = await h.get(c.get("url") or f"https://{c['token']}.teamtailor.com/jobs.rss")
+    r.raise_for_status()
+    if len(r.content) > 5_000_000:
+        raise RuntimeError("flux trop volumineux (plus de 5 Mo), ignoré")
+
+    def parse():
+        out = []
+        for it in (n for n in ET.fromstring(r.content).iter() if n.tag.split("}")[-1] == "item"):
+            link = _txt(it, "link")
+            place = _tt_place(it)
+            if not place and _txt(it, "remoteStatus") == "fully":
+                place = "Remote"
+            out.append(_offer(c["name"], _txt(it, "guid") or link, c["name"], strip_html(_txt(it, "title")), place,
+                              link, _txt(it, "description"), _txt(it, "pubDate")))
+        return out
+    return await asyncio.to_thread(parse)
+
+
 ATS = {"greenhouse": greenhouse, "lever": lever, "ashby": ashby,
-       "smartrecruiters": smartrecruiters, "workday": workday}
+       "smartrecruiters": smartrecruiters, "workday": workday,
+       "workable": workable, "teamtailor": teamtailor}
 
 
 # ---------- Flux RSS / Atom (ex. alerte Google transformée en flux) ----------

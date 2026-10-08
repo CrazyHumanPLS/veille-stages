@@ -1,6 +1,40 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, post, put, ago, Dot, useAction } from "./api.jsx";
 
+// Publications prêtes à copier, fabriquées à partir des vraies offres de la semaine (aucun appel à l'IA).
+function Posts() {
+  const [data, setData] = useState(null);
+  const [region, setRegion] = useState("");
+  const [msg, setMsg] = useState("");
+  const load = r => { setMsg("Préparation…"); api(`/api/admin/posts?region=${encodeURIComponent(r)}`).then(d => { setData(d); setMsg(""); }).catch(e => setMsg("Erreur : " + e.message)); };
+  const copy = async (text, what) => {
+    try { await navigator.clipboard.writeText(text); setMsg(`${what} : texte copié.`); }
+    catch { setMsg("Copie impossible : sélectionne le texte à la main."); }
+  };
+  const KINDS = [["x", "X (Twitter)"], ["linkedin", "LinkedIn"], ["video", "Script de vidéo courte (TikTok, Reels)"]];
+  return (<div className="card posts">
+    <p className="mute">Un texte par domaine qui compte au moins 3 offres cette semaine. Les chiffres et les offres viennent du stock du site. Relis toujours avant de publier, et adapte la première phrase à ta façon de parler.</p>
+    <div className="row">
+      <select aria-label="Région" value={region} onChange={e => { setRegion(e.target.value); if (data) load(e.target.value); }}>
+        <option value="">Toute la France</option>
+        {Object.entries(data?.regions || {}).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+      </select>
+      <button className="btn" onClick={() => load(region)}>{data ? "Actualiser" : "Préparer les publications du jour"}</button>
+    </div>
+    {msg && <p className="note">{msg}</p>}
+    {data && !data.app_url && <p className="err small">La variable APP_URL n'est pas renseignée : les liens des textes sont incomplets.</p>}
+    {data && !data.posts.length && <p className="mute">Pas assez d'offres cette semaine pour cette sélection.</p>}
+    {data?.posts.map(p => (<details key={p.domain}>
+      <summary><b>{p.label}</b> : {p.count} offres</summary>
+      {KINDS.map(([k, l]) => (<div key={k}>
+        <h4>{l}{k === "x" && ` (${p.x.length} caractères sur 280)`}</h4>
+        <textarea readOnly value={p[k]} onFocus={e => e.target.select()} />
+        <button className="btn ghost" onClick={() => copy(p[k], l)}>Copier</button>
+      </div>))}
+    </details>))}
+  </div>);
+}
+
 export default function Admin({ me }) {
   const [ov, setOv] = useState(null);
   const [set, setSet] = useState(null);
@@ -32,6 +66,9 @@ export default function Admin({ me }) {
     </div>
 
     <p className="mute">Sur {ov.stats.total} inscrits : {ov.stats.with_cv} ont importé un CV, {ov.stats.with_alerts} ont branché une alerte, {ov.stats.own_key} utilisent leur propre clé, {ov.stats.premium} sont en Premium, {ov.stats.active_30d} sont venus dans les 30 derniers jours.</p>
+
+    <h3>Publications du jour</h3>
+    <Posts />
 
     <h3>Inscrits</h3>
     {temp && <p className="note">Mot de passe provisoire de {temp.email} : <code>{temp.password}</code><br />Transmets-le-lui ; il le changera dans Réglages. Il ne sera plus affiché.</p>}

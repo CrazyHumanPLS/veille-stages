@@ -9,7 +9,7 @@ import time
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -19,6 +19,7 @@ load_dotenv()
 
 import accounts  # noqa: E402
 import ai  # noqa: E402
+import board  # noqa: E402
 import collector  # noqa: E402
 import cvstore  # noqa: E402
 import db  # noqa: E402
@@ -159,6 +160,14 @@ def public():
             "premium": {"url": os.getenv("PREMIUM_URL", ""), "price": os.getenv("PREMIUM_PRICE", "")},
             "shared_ai": bool(quota.shared_key()), "ga": GA_ID, "mail": mailer.enabled(),
             "domains": domains.labels(), "regions": domains.region_labels()}
+
+
+@app.get("/api/public/offers")
+def public_offers(request: Request, response: Response, domain: str = "", region: str = ""):
+    """Vitrine sans compte : quelques offres récentes d'un domaine. Calcul gardé 10 minutes en mémoire."""
+    throttle(f"board:{client_ip(request)}", 60, 60, "Trop de demandes. Réessaie dans une minute.")
+    response.headers["Cache-Control"] = "public, max-age=300"   # rien de personnel ici
+    return board.view(domain[:20], region[:20])
 
 
 # ---------- comptes ----------
@@ -970,6 +979,13 @@ async def admin_mail_test(me: dict = Depends(admin)):
     except Exception as e:
         raise HTTPException(502, {"error": str(e), "help": mailer.explain(str(e))})
     return {"to": me["email"], "from": mailer.sender()}
+
+
+@app.get("/api/admin/posts")
+def admin_posts(region: str = "", _: dict = Depends(admin)):
+    """Textes de publications (X, LinkedIn, vidéo courte) tirés des offres réelles de la semaine."""
+    return {"posts": board.posts(os.getenv("APP_URL", ""), region[:20]), "regions": domains.region_labels(),
+            "app_url": bool(os.getenv("APP_URL"))}
 
 
 @app.post("/api/admin/collect")
