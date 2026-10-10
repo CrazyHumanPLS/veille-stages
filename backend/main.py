@@ -29,6 +29,7 @@ import notify  # noqa: E402
 import quota  # noqa: E402
 import scoring  # noqa: E402
 import security  # noqa: E402
+import seo  # noqa: E402
 import sources  # noqa: E402
 
 COLLECT_EVERY = int(os.getenv("COLLECT_EVERY_SEC", "180"))  # 0 = pas de collecte automatique
@@ -993,7 +994,74 @@ async def admin_collect(_: dict = Depends(admin)):
     return await collector.run_once(force=True)
 
 
+# ---------- pages publiques lisibles par les moteurs de recherche (voir seo.py) ----------
+from fastapi.responses import HTMLResponse, PlainTextResponse  # noqa: E402
+
+# Code donné par Google Search Console (méthode « Balise HTML ») : lettres, chiffres, tiret et souligné seulement.
+_gv = os.getenv("GOOGLE_VERIFY", "").strip()
+GOOGLE_VERIFY = _gv if re.fullmatch(r"[\w-]{10,100}", _gv) else ""
+
+
+def site_base(request: Request) -> str:
+    """Adresse publique du site, sans barre finale : APP_URL si elle est réglée, sinon celle de la demande."""
+    return os.getenv("APP_URL", "").strip().rstrip("/") or str(request.base_url).rstrip("/")
+
+
+def _seo_page(request: Request, domain: str = "", region: str = "") -> HTMLResponse:
+    throttle(f"seo:{client_ip(request)}", 300, 60, "Trop de demandes. Réessaie dans une minute.")
+    page = seo.render(domain, region, site_base(request), APP_NAME, verify=GOOGLE_VERIFY)
+    return HTMLResponse(page, headers={"Cache-Control": "public, max-age=600"})
+
+
+@app.get("/stages", response_class=HTMLResponse)
+def seo_hub(request: Request):
+    return _seo_page(request)
+
+
+@app.get("/stages/{domain}", response_class=HTMLResponse)
+def seo_domain(domain: str, request: Request):
+    found = seo.resolve(domain[:60])
+    if not found:
+        raise HTTPException(404, "Page introuvable.")
+    return _seo_page(request, *found)
+
+
+@app.get("/stages/{domain}/{region}", response_class=HTMLResponse)
+def seo_region(domain: str, region: str, request: Request):
+    found = seo.resolve(domain[:60], region[:60])
+    if not found:
+        raise HTTPException(404, "Page introuvable.")
+    return _seo_page(request, *found)
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse)
+def robots(request: Request):
+    return PlainTextResponse(seo.robots(site_base(request)), headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/sitemap.xml")
+def sitemap(request: Request):
+    throttle(f"seo:{client_ip(request)}", 300, 60, "Trop de demandes. Réessaie dans une minute.")
+    return Response(seo.sitemap(site_base(request)), media_type="application/xml",
+                    headers={"Cache-Control": "public, max-age=3600"})
+
+
 # ---------- site (frontend compilé), servi par le même service ----------
 DIST = pathlib.Path(__file__).parent.parent / "frontend" / "dist"
+
+
+def home_html(page: str, base: str) -> str:
+    """Page d'accueil : on y ajoute l'adresse officielle du site et, s'il existe, le code de vérification Google."""
+    extra = f'<link rel="canonical" href="{seo.e(base)}/"><meta property="og:url" content="{seo.e(base)}/">'
+    if GOOGLE_VERIFY:
+        extra += f'<meta name="google-site-verification" content="{GOOGLE_VERIFY}">'
+    return page.replace("</head>", extra + "</head>", 1)
+
+
 if DIST.exists():
+    @app.get("/", response_class=HTMLResponse)
+    def home(request: Request):
+        page = (DIST / "index.html").read_text(encoding="utf-8")
+        return HTMLResponse(home_html(page, site_base(request)), headers={"Cache-Control": "no-cache"})
+
     app.mount("/", StaticFiles(directory=DIST, html=True), name="site")

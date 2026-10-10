@@ -631,7 +631,7 @@ def test_emails(monkeypatch):
         assert c.post("/api/ai", json={"task": "targets"}, headers=h).status_code == 429
         # un lien d'un autre type, ou trafiqué, est refusé
         assert c.post("/api/verify", json={"token": security.make_link_token("reset", u["id"], 0, 1)}).status_code == 400
-        assert c.post("/api/verify", json={"token": link(m, "verify")[:-1] + "0"}).status_code == 400
+        assert c.post("/api/verify", json={"token": link(m, "verify")[:-1] + ("1" if link(m, "verify").endswith("0") else "0")}).status_code == 400
         assert c.post("/api/verify", json={"token": link(m, "verify")}).json()["ok"]
         me = c.get("/api/me", headers=h).json()
         assert me["verified"] and me["ai"]["needs_verification"] is False and not me["is_admin"]
@@ -885,3 +885,87 @@ def test_public_board_and_posts(monkeypatch):
     with db.engine.begin() as c:
         c.execute(delete(db.offers))
     board.reset()
+
+
+def test_seo_pages(monkeypatch):
+    """Pages lisibles par Google : contenu réel écrit par le serveur, pages maigres non proposées, ouverture progressive."""
+    import time
+    from fastapi.testclient import TestClient
+    from sqlalchemy import delete, insert
+    import board, main, seo
+    monkeypatch.setenv("APP_URL", "https://site.test/")
+    monkeypatch.setattr(main, "GOOGLE_VERIFY", "abcDEF123_-xyz")
+    now = time.time()
+    with db.engine.begin() as c:
+        c.execute(delete(db.offers))
+        def add(i, title, company, place, text, url=None):
+            c.execute(insert(db.offers).values(id=f"seo{i}", source=company, company=company, title=title, place=place,
+                                               url=url or f"https://ex.fr/seo{i}", description=text, published=RECENT,
+                                               ext_id=f"seo{i}", first_seen=now - 3600, kw_score=50))
+        add(1, "Stage data scientist NLP", "Dataiku", "Paris", "Python, machine learning, pandas, SQL")
+        add(2, "Stage data analyst", "Qonto", "Paris, France", "SQL, Python, Tableau, statistiques")
+        add(3, "Stage data engineer", "Doctolib", "92 - Levallois", "Python, Spark, Airflow, SQL")
+        add(4, "Stage machine learning <b>vision</b>", "Valeo & Co", "Lyon", "Python, PyTorch, deep learning")
+        add(5, "Stage data scientist", "Thales", "France", "Python, statistiques, machine learning")
+        add(6, "Stage data piégé", "Piège", "Paris", "machine learning", url="javascript:alert(1)")
+        add(7, "Stage ingénieur cybersécurité SOC", "Orange", "Rennes", "SIEM Splunk, EDR, bac+5")
+    db.kv_set("seo_pages", None)
+    board.reset()
+    seo.reset()
+    with TestClient(main.app) as c:
+        r = c.get("/stages/data-ia")
+        page = r.text
+        assert r.status_code == 200 and r.headers["content-type"].startswith("text/html") and "max-age" in r.headers["cache-control"]
+        assert "frame-ancestors" in r.headers["content-security-policy"]                         # en-têtes de sécurité conservés
+        assert "<h1>Stage data et IA en France</h1>" in page and "5 offres de stage en data et IA" in page
+        assert '<meta name="robots" content="index,follow">' in page                             # assez d'offres : proposée à Google
+        assert '<link rel="canonical" href="https://site.test/stages/data-ia">' in page
+        assert 'content="abcDEF123_-xyz"' in page and "application/ld+json" in page
+        for word in ("Dataiku", "Qonto", "Doctolib", "Thales", "Les entreprises qui recrutent", "Où sont les stages",
+                     "Les compétences les plus demandées", "python <span>(dans 5 annonces)</span>"):
+            assert word in page, word                                                           # chiffres propres à la page
+        assert "&lt;b&gt;vision&lt;/b&gt;" in page and "<b>vision</b>" not in page and "Valeo &amp; Co" in page  # texte neutralisé
+        assert "javascript:" not in page and "piégé" not in page                                # lien dangereux écarté
+        assert 'href="/stages/data-ia/ile-de-france"' in page                                   # maillage vers la région fournie
+        assert "/stages/data-ia/bretagne" not in page                                           # pas de lien vers une page vide
+        # région : seulement les offres qui s'y trouvent (pas « France »), 3 offres donc lisible mais pas encore ouverte
+        idf = c.get("/stages/data-ia/ile-de-france").text
+        assert "<h1>Stage data et IA en Île-de-France</h1>" in idf and "3 offres de stage" in idf
+        assert "Thales" not in idf and "Valeo" not in idf and "Stage data et IA Paris et La Défense (Île-de-France)" in idf
+        assert '<meta name="robots" content="noindex,follow">' in idf                           # ouverture progressive
+        # page maigre : visible, jamais proposée à Google
+        thin = c.get("/stages/data-ia/auvergne-rhone-alpes").text
+        assert "1 offre de stage" in thin and "noindex,follow" in thin
+        empty = c.get("/stages/embarque-electronique/corse").text
+        assert "Aucune offre" in empty and "noindex,follow" in empty
+        assert c.get("/stages/inconnu").status_code == 404 and c.get("/stages/data-ia/atlantide").status_code == 404
+        hub = c.get("/stages").text
+        assert 'href="/stages/data-ia"' in hub and "5 offres cette semaine" in hub and "index,follow" in hub
+        # plan du site : accueil, sommaire et le seul domaine assez fourni
+        sm = c.get("/sitemap.xml")
+        assert sm.headers["content-type"].startswith("application/xml")
+        assert re.findall(r"<loc>(.*?)</loc>", sm.text) == ["https://site.test/", "https://site.test/stages",
+                                                            "https://site.test/stages/data-ia"]
+        rb = c.get("/robots.txt").text
+        assert "Sitemap: https://site.test/sitemap.xml" in rb and "Disallow: /api/" in rb
+        # une semaine plus tard : la page de région la plus fournie est ouverte à son tour, et le reste
+        assert db.kv_get("seo_pages")["pages"] == ["data"]
+        later = now + 8 * 86400
+        seo.reset()
+        n = seo.counts(board._data(now))
+        assert seo.published(n, later) == ["data", "data/idf"]
+        seo.reset()
+        assert seo.published(n, later + 3600) == ["data", "data/idf"]                           # pas deux fois dans la semaine
+        assert "index,follow" in c.get("/stages/data-ia/ile-de-france").text
+    # adresses stables, et celles de la page d'accueil sans JavaScript existent toutes
+    assert seo.path("data", "paca") == "/stages/data-ia/provence-alpes-cote-d-azur"
+    index = open(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "index.html"), encoding="utf-8").read()
+    for d in seo.SLUGS:
+        assert f'href="{seo.path(d)}"' in index, d
+    home = main.home_html("<html><head><title>x</title></head><body></body></html>", "https://site.test")
+    assert '<link rel="canonical" href="https://site.test/">' in home and "google-site-verification" in home
+    with db.engine.begin() as c:
+        c.execute(delete(db.offers))
+    db.kv_set("seo_pages", None)
+    board.reset()
+    seo.reset()

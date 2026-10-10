@@ -15,13 +15,14 @@ Créé le 06/10/2026 à partir de l'application personnelle `stage-app` (même a
 | Élément | Emplacement |
 |---|---|
 | Code sur le PC | `C:\Users\User\Downloads\stage-m2-app\veille-stages` |
-| Dépôt GitHub | à créer par l'utilisateur (privé), voir README étape 1 |
-| Site, base, réveil | pas encore mis en ligne au 06/10/2026 (README étapes 2 à 6) |
+| Dépôt GitHub | privé, poussé par l'utilisateur avec GitHub Desktop |
+| Site | https://veille-stages.onrender.com (en ligne depuis le 06/10/2026), base Supabase |
 
 Variables d'environnement (valeurs dans Render uniquement) : `DATABASE_URL`, `SECRET_KEY` (créée par Render,
 ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI_API_KEY` (clé commune),
 `GEMINI_MODEL`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `SIGNUP_MODE`, `INVITE_CODE`, `CONTACT_EMAIL`, `DONATE_URL`,
-`TELEGRAM_TOKEN`, `TELEGRAM_BOT`, `COLLECT_EVERY_SEC`, `LEGAL_NAME`, `PREMIUM_URL`, `PREMIUM_PRICE`, `GA_ID`, `BREVO_API_KEY`, `MAIL_FROM`.
+`TELEGRAM_TOKEN`, `TELEGRAM_BOT`, `COLLECT_EVERY_SEC`, `LEGAL_NAME`, `PREMIUM_URL`, `PREMIUM_PRICE`, `GA_ID`, `BREVO_API_KEY`, `MAIL_FROM`,
+`GOOGLE_VERIFY` (code Search Console), `SEO_PER_WEEK` (2 par défaut).
 
 ## Choix de conception (décidés le 06/10/2026, l'utilisateur a délégué)
 
@@ -48,6 +49,7 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
 - `backend/scoring.py`, `sources.py`, `ai.py`, `notify.py`, `cvstore.py`, `db.py` : repris de `stage-app`, adaptés
   pour recevoir l'utilisateur ou sa clé en paramètre.
 - `backend/board.py` : vitrine publique (offres de la semaine par domaine) et textes de publications.
+- `backend/seo.py` : pages HTML écrites par le serveur pour Google (`/stages…`), plan du site, robots.txt.
 - `backend/tests/test_pipeline.py` : tests avec réseau simulé (`python -m pytest -q` dans `backend`).
 - `frontend/src/` : `App.jsx` (connexion, offres, suivi, assistant, profil), `Board.jsx` (vitrine publique), `Settings.jsx`, `Admin.jsx`, `api.jsx`.
 
@@ -151,7 +153,30 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   publie rien sur ses comptes sans validation. Écartés : recopier des tweets viraux, dropshipping, Comeup/Malt (pas de
   clients sans historique). À vérifier par l'utilisateur avant de faire payer : statut de micro-entrepreneur et
   conditions d'usage d'Adzuna et de France Travail (affichage public et usage commercial).
-- 15 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
+- Référencement Google (10/10) : l'utilisateur a demandé à Claude d'agir en agent SEO autonome, en suivant un article
+  (mots-clés à intention d'achat, un motif de mots-clés = une série de pages, quelque chose d'unique par page,
+  publication lente et régulière, liens internes, puis liens entrants et citations par les IA). Décision : rester sur
+  Veille Stages plutôt que lancer un autre produit ; motif retenu « stage [domaine] [ville ou région] ».
+  Constat de départ : le site était invisible (application React, adresse en `#`, rien à lire sans JavaScript, pas de
+  plan du site, pas de Search Console). Fait : `backend/seo.py` écrit en HTML `/stages` (sommaire),
+  `/stages/<domaine>` et `/stages/<domaine>/<région>` à partir du calcul de `board.py` (aucune requête ni IA en plus),
+  avec la feuille de style compilée du site. Chaque page : 12 offres, entreprises qui recrutent, villes, compétences
+  les plus citées (`tech` ajouté aux offres dans `board._scan`), fil d'Ariane, données structurées, liens vers les
+  seules pages fournies. Une page de région ne compte que les offres situées dans la région (pas « France »).
+  Garde-fous : moins de 3 offres (`MIN_OFFERS`) = `noindex` et hors plan du site ; ouverture progressive gardée dans
+  kv `seo_pages` (les domaines d'abord, puis `SEO_PER_WEEK` pages de région par semaine, une page ouverte le reste).
+  `/robots.txt`, `/sitemap.xml`, balise de vérification `GOOGLE_VERIFY` sur l'accueil et les pages. La page d'accueil
+  est maintenant servie par `main.home` (ajout de l'adresse officielle), `frontend/index.html` a un vrai titre et un
+  texte de secours avec les liens vers les six domaines (les adresses de `seo.SLUGS` ne doivent plus changer).
+  Les offres ne sont pas balisées `JobPosting` : Google le réserve aux pages où l'on peut postuler.
+  Test `test_emails` : il échouait une fois sur seize (jeton trafiqué identique à l'original), corrigé.
+  Vérifié : 16 tests, et rendu regardé sur ordinateur et téléphone avec des offres d'exemple ; jamais vu avec le
+  stock réel avant le push. À faire par l'utilisateur : Search Console (README « Être trouvé sur Google »).
+  Suite prévue : lire Search Console après 2 à 3 semaines, pages par métier précis (« stage data analyst »,
+  « stage cybersécurité ») si le stock suit, alternance (budget côté entreprises), liens entrants gratuits (écoles,
+  associations étudiantes, annuaires d'outils), nom de domaine propre dès qu'il y a des revenus (une adresse
+  `onrender.com` ne garde pas son acquis si on change d'hébergeur).
+- 16 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.
 

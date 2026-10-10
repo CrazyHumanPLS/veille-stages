@@ -86,6 +86,30 @@ page « Confidentialité et données », téléchargement de ses données, suppr
 mots de passe hachés (scrypt), clés Gemini et adresses d'alerte chiffrées en base. Ne partage jamais
 `SECRET_KEY` ni `DATABASE_URL`, et mets ton adresse dans `CONTACT_EMAIL` pour que les inscrits puissent t'écrire.
 
+## Être trouvé sur Google
+
+Le site écrit lui-même des pages que Google peut lire : `/stages` (sommaire), `/stages/data-ia` (un domaine),
+`/stages/data-ia/ile-de-france` (un domaine dans une région). Le plan du site est à `/sitemap.xml`.
+Une page n'est proposée à Google que si elle contient au moins 3 offres de la semaine. Les pages de région
+s'ouvrent à Google petit à petit, 2 de plus par semaine : c'est voulu, un site neuf qui publie des dizaines de
+pages d'un coup est classé comme site fabriqué en série.
+
+À faire une seule fois, pour que Google connaisse le site et que tu voies tes chiffres :
+
+1. Ouvre https://search.google.com/search-console et connecte-toi avec ton compte Google.
+2. Clique sur **Ajouter une propriété**, choisis **Préfixe de l'URL** (colonne de droite), colle l'adresse du
+   site (`https://veille-stages.onrender.com`) puis clique sur **Continuer**.
+3. Dans la liste des méthodes, ouvre **Balise HTML**. Google affiche une ligne du type
+   `<meta name="google-site-verification" content="AbCd123..." />`. Copie uniquement le code entre les
+   guillemets après `content=`.
+4. Dans Render : ton service → **Environment** → **Add Environment Variable**. Clé : `GOOGLE_VERIFY`,
+   valeur : le code copié. Clique sur **Save Changes** et attends la fin du redémarrage (2 à 3 minutes).
+5. Reviens dans Search Console et clique sur **Valider**.
+6. Dans le menu de gauche, clique sur **Sitemaps**, écris `sitemap.xml` dans la case puis clique sur **Envoyer**.
+
+Les premiers chiffres (menu **Performances**) arrivent au bout de quelques jours, les premières visites au bout
+de quelques semaines.
+
 ## Tester sur ton PC (facultatif)
 
 ```

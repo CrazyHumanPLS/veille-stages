@@ -30,3 +30,4 @@ services:
       - {key: TELEGRAM_TOKEN, sync: false}    # facultatif : bot Telegram du site
       - {key: TELEGRAM_BOT, sync: false}      # facultatif : nom du bot, sans @
       - {key: COLLECT_EVERY_SEC, value: "180"}
+      - {key: GOOGLE_VERIFY, sync: false}     # facultatif : code de vérification de Google Search Console (voir README)

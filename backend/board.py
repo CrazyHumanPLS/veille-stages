@@ -60,7 +60,8 @@ def _scan(now: float) -> dict[str, list[dict]]:
                 item = {"id": r.id, "title": r.title, "company": r.company or "", "place": r.place or "", "url": r.url,
                         "source": r.source or "", "published": published, "first_seen": r.first_seen,
                         "regions": dom.regions_of(r.place or ""), "anywhere": dom.place_ok(r.place or "", ["__"])}
-            out[k].append({**item, "score": score})
+            text = scoring.norm(f"{r.title} {r.text or ''}")   # compétences citées : sert aux pages publiques (seo.py)
+            out[k].append({**item, "score": score, "tech": [w for w in crit["tech"] if scoring._has(w, text)]})
     for k, items in out.items():
         # les nouveautés d'abord, puis les plus proches du domaine
         items.sort(key=lambda x: (x["first_seen"] > now - FRESH_HOURS * 3600, x["score"], x["first_seen"]), reverse=True)

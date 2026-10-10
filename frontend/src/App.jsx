@@ -183,7 +183,7 @@ function Auth({ info, onOk, onCookies }) {
       <section className="pitch">
         <h1>Arrête de chercher. Les bons stages arrivent tout seuls.</h1>
         <p className="lead">On surveille les sites carrières jour et nuit. Chaque offre est notée d'après ton CV, et les meilleures arrivent sur ton téléphone dès leur mise en ligne.</p>
-        <p><a className="btn ghost" href="#offres">Voir les offres de la semaine, sans compte</a></p>
+        <p><a className="btn ghost" href="/stages">Voir les offres de la semaine, sans compte</a></p>
         <div className="demo" aria-hidden="true">
           <div className="ping"><b>Nouvelle offre, 92 sur 100</b><span>Stage ingénieur réseaux et sécurité, à l'instant</span></div>
           <div className="sheet">{DEMO.map(d => (
@@ -241,6 +241,7 @@ function Auth({ info, onOk, onCookies }) {
     <div className="wrap" id="legal">
       {doc && <Legal info={info} only={doc} />}
       <footer className="mute">
+        <a href="/stages">Stages par domaine et par région</a>
         <a href="#" onClick={open("terms")}>Conditions d'utilisation</a>
         <a href="#" onClick={open("privacy")}>Confidentialité</a>
         <a href="#" onClick={open("imprint")}>Mentions légales</a>

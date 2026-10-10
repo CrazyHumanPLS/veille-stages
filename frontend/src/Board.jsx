@@ -67,6 +67,7 @@ export default function Board({ info, domain, logged, onJoin }) {
         <button className="btn big" onClick={onJoin}>{cta}</button>
         {!logged && <p className="mute">Gratuit, sans publicité.</p>}
       </div>}
+      <footer className="mute"><a href="/stages">Tous les stages par domaine et par région</a></footer>
     </main>
   </div>);
 }
