@@ -169,6 +169,9 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   est maintenant servie par `main.home` (ajout de l'adresse officielle), `frontend/index.html` a un vrai titre et un
   texte de secours avec les liens vers les six domaines (les adresses de `seo.SLUGS` ne doivent plus changer).
   Les offres ne sont pas balisées `JobPosting` : Google le réserve aux pages où l'on peut postuler.
+  Mis en ligne et vérifié le 10/10 avec le stock réel (150 à 270 offres par domaine, 8 adresses dans le plan du
+  site), Search Console validée et plan du site envoyé par l'utilisateur. Une même annonce publiée dans plusieurs
+  villes n'est affichée qu'une fois (`seo.distinct`, « et 2 autres lieux »).
   Test `test_emails` : il échouait une fois sur seize (jeton trafiqué identique à l'original), corrigé.
   Vérifié : 16 tests, et rendu regardé sur ordinateur et téléphone avec des offres d'exemple ; jamais vu avec le
   stock réel avant le push. À faire par l'utilisateur : Search Console (README « Être trouvé sur Google »).

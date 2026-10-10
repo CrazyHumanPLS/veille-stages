@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 import board
 import db
 import domains as dom
+import scoring
 
 MIN_OFFERS = 3                                      # en dessous, la page reste visible mais pas proposée à Google
 SHOWN = 12                                          # offres affichées sur une page
@@ -162,6 +163,20 @@ def facts(items: list[dict]) -> dict:
             "skills": [(t, c) for t, c in skills.most_common(10) if c >= 2] if len(items) >= 5 else []}
 
 
+def distinct(items: list[dict]) -> list[dict]:
+    """Une même annonce publiée dans plusieurs villes (ou reprise par deux sources) n'est montrée qu'une fois ;
+    « also » compte les autres lieux. L'ordre est conservé."""
+    seen, out = {}, []
+    for x in items:
+        key = (scoring.company_key(x["company"]) or x["id"], scoring.title_key(x["title"]))
+        if key in seen:
+            seen[key]["also"] += 1
+            continue
+        seen[key] = {**x, "also": 0}
+        out.append(seen[key])
+    return out
+
+
 _css = {"href": None, "at": 0.0}
 
 
@@ -234,11 +249,12 @@ def _offer(x: dict, now: float) -> str:
     tone = "hi" if x["score"] >= 75 else "mid" if x["score"] >= 55 else "lo"
     url = e(x["url"])
     when = _when(x["published"], now)
+    also = f" et {_plural(x['also'], 'autre lieu', 'autres lieux')}" if x.get("also") else ""
     return (
         f'<article class="offer"><div class="score {tone}" title="Proximité avec le domaine, d\'après les mots-clés de '
         f'l\'annonce"><span>{x["score"]}</span><small>mots-clés</small></div><div class="body">'
         f'<h3 class="otitle"><a href="{url}" target="_blank" rel="noopener noreferrer nofollow">{e(x["title"])}</a></h3>'
-        f'<p class="ometa"><b>{e(_company(x) or "Entreprise non précisée")}</b><span>{e(x["place"] or "lieu non précisé")}</span>'
+        f'<p class="ometa"><b>{e(_company(x) or "Entreprise non précisée")}</b><span>{e(x["place"] or "lieu non précisé")}{also}</span>'
         f'<span>via {e(x["source"])}</span></p>' + (f'<p class="odate">{when}</p>' if when else "")
         + f'<div class="actions"><a class="btn ghost" href="{url}" target="_blank" rel="noopener noreferrer nofollow">'
           "Voir l'offre</a></div></div></article>")
@@ -328,8 +344,9 @@ def render(domain: str, region: str, base: str, name: str, now: float | None = N
     body = [crumbs, f"<h1>{e(h1)}</h1>", f'<p class="lead">{e(lead)}</p>',
             f'<p class="mute">Mis à jour le {updated}.</p>']
     if items:
-        body.append('<div class="sheet">' + "".join(_offer(x, now) for x in items[:SHOWN]) + "</div>")
-        body.append(_cta(total - min(total, SHOWN)))
+        shown = distinct(items)[:SHOWN]
+        body.append('<div class="sheet">' + "".join(_offer(x, now) for x in shown) + "</div>")
+        body.append(_cta(total - sum(1 + x["also"] for x in shown)))
         body.append(_facts_html(f))
     else:
         body.append('<div class="empty"><b>Rien cette semaine dans cette sélection.</b>'

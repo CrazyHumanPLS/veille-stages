@@ -909,6 +909,8 @@ def test_seo_pages(monkeypatch):
         add(5, "Stage data scientist", "Thales", "France", "Python, statistiques, machine learning")
         add(6, "Stage data piégé", "Piège", "Paris", "machine learning", url="javascript:alert(1)")
         add(7, "Stage ingénieur cybersécurité SOC", "Orange", "Rennes", "SIEM Splunk, EDR, bac+5")
+        add(8, "Stage ingénieur cybersécurité SOC", "Orange", "Lannion", "SIEM Splunk, EDR, bac+5")
+        add(9, "Stage ingénieur cybersécurité SOC", "Orange", "Brest", "SIEM Splunk, EDR, bac+5")
     db.kv_set("seo_pages", None)
     board.reset()
     seo.reset()
@@ -928,6 +930,9 @@ def test_seo_pages(monkeypatch):
         assert "javascript:" not in page and "piégé" not in page                                # lien dangereux écarté
         assert 'href="/stages/data-ia/ile-de-france"' in page                                   # maillage vers la région fournie
         assert "/stages/data-ia/bretagne" not in page                                           # pas de lien vers une page vide
+        # la même annonce dans trois villes : comptée trois fois, montrée une seule
+        cyber = c.get("/stages/reseaux-cybersecurite-cloud").text
+        assert "3 offres de stage" in cyber and cyber.count('<article class="offer">') == 1 and "et 2 autres lieux" in cyber
         # région : seulement les offres qui s'y trouvent (pas « France »), 3 offres donc lisible mais pas encore ouverte
         idf = c.get("/stages/data-ia/ile-de-france").text
         assert "<h1>Stage data et IA en Île-de-France</h1>" in idf and "3 offres de stage" in idf
@@ -945,17 +950,18 @@ def test_seo_pages(monkeypatch):
         sm = c.get("/sitemap.xml")
         assert sm.headers["content-type"].startswith("application/xml")
         assert re.findall(r"<loc>(.*?)</loc>", sm.text) == ["https://site.test/", "https://site.test/stages",
+                                                            "https://site.test/stages/reseaux-cybersecurite-cloud",
                                                             "https://site.test/stages/data-ia"]
         rb = c.get("/robots.txt").text
         assert "Sitemap: https://site.test/sitemap.xml" in rb and "Disallow: /api/" in rb
         # une semaine plus tard : la page de région la plus fournie est ouverte à son tour, et le reste
-        assert db.kv_get("seo_pages")["pages"] == ["data"]
+        assert db.kv_get("seo_pages")["pages"] == ["reseaux", "data"]
         later = now + 8 * 86400
         seo.reset()
         n = seo.counts(board._data(now))
-        assert seo.published(n, later) == ["data", "data/idf"]
+        assert seo.published(n, later) == ["reseaux", "data", "reseaux/bre", "data/idf"]
         seo.reset()
-        assert seo.published(n, later + 3600) == ["data", "data/idf"]                           # pas deux fois dans la semaine
+        assert seo.published(n, later + 3600) == ["reseaux", "data", "reseaux/bre", "data/idf"]                          # pas deux fois dans la semaine
         assert "index,follow" in c.get("/stages/data-ia/ile-de-france").text
     # adresses stables, et celles de la page d'accueil sans JavaScript existent toutes
     assert seo.path("data", "paca") == "/stages/data-ia/provence-alpes-cote-d-azur"
