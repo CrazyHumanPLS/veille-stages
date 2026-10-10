@@ -22,7 +22,8 @@ pour tout le monde. Tout reste gratuit.
   6 analyses de CV. Un plafond global (800 appels par jour) protège la clé. Au-delà, les offres gardent
   un score par mots-clés et rien ne casse.
 - Chaque inscrit peut coller **sa propre clé Gemini gratuite** dans Réglages (2 minutes, sans carte bancaire).
-  Il n'a alors plus de limite côté site et ne consomme plus la clé commune.
+  Il ne consomme alors plus la clé commune et n'est plus bloqué quand elle est épuisée, mais **ses limites par
+  jour restent celles de sa formule** : seule la formule Premium les relève.
 - Toutes ces limites se changent dans l'onglet **Administration**, sans toucher au code.
 - Un compte qui ne visite pas le site pendant 3 semaines est mis en pause (plus de notation ni d'alerte)
   et reprend à la connexion suivante.
@@ -85,6 +86,23 @@ Le site enregistre des CV : tu en es responsable. Ce qui est en place : consente
 page « Confidentialité et données », téléchargement de ses données, suppression immédiate du compte,
 mots de passe hachés (scrypt), clés Gemini et adresses d'alerte chiffrées en base. Ne partage jamais
 `SECRET_KEY` ni `DATABASE_URL`, et mets ton adresse dans `CONTACT_EMAIL` pour que les inscrits puissent t'écrire.
+
+## Vendre la formule Premium
+
+Les limites d'IA dépendent de la formule du compte (gratuite ou Premium), pas de la clé utilisée. Tant que le
+lien de paiement n'est pas réglé, le site ne parle nulle part de Premium.
+
+1. Crée un lien de paiement (Stripe « Payment Link », PayPal, Lydia…) pour un abonnement mensuel.
+2. Dans Render : ton service → **Environment** → **Add Environment Variable**. Ajoute `PREMIUM_URL` (le lien,
+   qui doit commencer par `https://`) et `PREMIUM_PRICE` (le prix affiché, par exemple `4 € par mois`).
+   Clique sur **Save Changes**.
+3. Le site affiche alors l'offre en haut de l'onglet **Réglages**, sur la page d'inscription, et dans chaque
+   message « limite du jour atteinte ».
+4. Quand quelqu'un a payé : onglet **Administration**, ligne de la personne, bouton **+30 j Premium**. Ses
+   offres restées sans note sont notées dans les minutes qui suivent.
+
+Dès qu'un compte est Premium, les 150 derniers appels du jour de la clé commune lui sont réservés (réglable dans
+Administration) : quelqu'un qui paie n'est pas bloqué parce que les comptes gratuits ont tout consommé.
 
 ## Être trouvé sur Google
 

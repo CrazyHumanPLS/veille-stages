@@ -30,7 +30,8 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   personne son score par mots-clés, la note de l'IA, le CV conseillé, l'état (new/saved/hidden/applied),
   l'alerte envoyée ou non. `applications` et `usage` ont un `user_id`.
 - **Coût de l'IA nul pour le propriétaire.** Clé commune avec limites par jour et par personne (40 notes,
-  5 générations, 6 analyses de CV, plafond global 800 appels) ou clé Gemini personnelle sans limite.
+  5 générations, 6 analyses de CV, plafond global 800 appels). Depuis le 10/10, une clé Gemini personnelle ne
+  lève plus ces limites (voir « Premium refait » plus bas).
   Réglable dans Administration (kv `limits`). Pas de publicité : rapporte trop peu à cette échelle. Lien de don
   facultatif (`DONATE_URL`).
 - **Alertes par personne** : webhook Discord personnel (conseillé), sujet ntfy, ou Telegram si le site a un bot.
@@ -179,7 +180,23 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   « stage cybersécurité ») si le stock suit, alternance (budget côté entreprises), liens entrants gratuits (écoles,
   associations étudiantes, annuaires d'outils), nom de domaine propre dès qu'il y a des revenus (une adresse
   `onrender.com` ne garde pas son acquis si on change d'hébergeur).
-- 16 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
+- Premium refait (10/10, à la demande de l'utilisateur) : avant, enregistrer sa propre clé Gemini gratuite
+  supprimait toute limite, donc personne n'avait de raison de payer. Maintenant les limites par jour suivent la
+  FORMULE (gratuite ou Premium), jamais la clé (`quota.grant`). Une clé personnelle ne sert plus qu'à ne pas
+  consommer le quota commun et à ne pas en dépendre ; les comptes d'amis qui en avaient une retrouvent donc les
+  limites gratuites. Part réservée : dès qu'un compte est Premium, les `p_reserve` derniers appels du jour de la clé
+  commune (150, réglable dans Administration) sont refusés aux comptes gratuits (`quota.reserve`). Passage en
+  Premium par l'administrateur : `collector.requeue_unscored` remet en file les offres restées sans note (ce n'est
+  plus déclenché par l'ajout d'une clé). Premier passage : tout le stock n'est noté que pour un compte Premium.
+  Écrans : carte Premium en haut des Réglages avec tableau Gratuit / Premium, message dans la liste des offres
+  quand la limite de notes est atteinte, lien Premium dans les messages de limite (`ai.can_upgrade`), ligne
+  Premium sur la page d'inscription. Rien de tout cela ne s'affiche tant que `PREMIUM_URL` (https) est vide :
+  **c'est le cas au 10/10, aucun paiement n'est possible**. Reste à faire par l'utilisateur : statut pour encaisser,
+  lien de paiement, `PREMIUM_URL` et `PREMIUM_PRICE` (README « Vendre la formule Premium »). Limite connue : la clé
+  commune est une clé Gemini gratuite plafonnée à 800 appels par jour ; quelques abonnés actifs suffiront à
+  l'épuiser, il faudra alors une clé payante (coût à comparer au prix de l'abonnement). Pistes : paiement
+  automatique (webhook Stripe) à la place du bouton « +30 j Premium », alertes immédiates réservées au Premium.
+- 17 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.
 

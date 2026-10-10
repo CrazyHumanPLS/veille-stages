@@ -58,19 +58,24 @@ function Alerts({ me, setMe }) {
   </>);
 }
 
+// Formule Premium : ce qu'elle change, chiffres à l'appui. Rien n'est affiché s'il n'y a rien à vendre.
 function Premium({ me, info }) {
-  const ai = me.ai, pr = info?.premium, pl = info?.premium_limits;
-  if (!ai.premium && !/^https:\/\//.test(pr?.url || "")) return null;   // rien à vendre : on n'affiche rien
+  const ai = me.ai, pr = info?.premium, pl = info?.premium_limits, fr = info?.limits;
+  if (!ai.premium && !/^https:\/\//.test(pr?.url || "")) return null;
   const until = ai.premium && new Date(ai.premium_until * 1000).toLocaleDateString("fr-FR");
+  const rows = pl && fr ? [["Offres notées d'après ton CV, par jour", fr.score, pl.score],
+    ["Lettres de motivation, analyses d'offre et messages, par jour", fr.assist, pl.assist],
+    ["Analyses de CV, par jour", fr.cv, pl.cv]] : [];
   return (<div className={`card premium${ai.premium ? " active" : ""}`}>
-    <strong>{ai.premium ? `Tu es en Premium jusqu'au ${until}` : `Premium${pr.price ? `, ${pr.price}` : ""}`}</strong>
-    {pl && <ul>
-      <li>{pl.score} offres notées par l'IA chaque jour, au lieu de {info.limits.score}.</li>
-      <li>{pl.assist} lettres, analyses et messages par jour, au lieu de {info.limits.assist}.</li>
-      <li>Aucune clé à créer : tout fonctionne dès l'activation.</li>
-    </ul>}
-    {!ai.premium && <><a className="btn" href={pr.url} target="_blank" rel="noopener noreferrer">Passer en Premium</a>
-      <p className="mute">Lors du paiement, indique l'adresse {me.email}. Ton compte est activé à la main, en général dans la journée.</p></>}
+    <h3>{ai.premium ? `Tu es en Premium jusqu'au ${until}` : `Passe en Premium${pr.price ? ` : ${pr.price}` : ""}`}</h3>
+    {!ai.premium && <p>En formule gratuite, l'IA s'arrête chaque jour à {fr?.score} offres : les suivantes ne sont plus notées d'après ton CV, et tu peux manquer la bonne. En Premium, la limite passe à {pl?.score}.</p>}
+    {rows.length > 0 && <div className="scroll"><table>
+      <thead><tr><th></th><th>Gratuit</th><th>Premium</th></tr></thead>
+      <tbody>{rows.map(([label, a, b]) => <tr key={label}><td>{label}</td><td>{a}</td><td><b>{b}</b></td></tr>)}
+        <tr><td>Quand le quota d'IA du site est presque épuisé</td><td>en attente</td><td><b>part réservée</b></td></tr></tbody>
+    </table></div>}
+    {!ai.premium && <><a className="btn big" href={pr.url} target="_blank" rel="noopener noreferrer">Passer en Premium</a>
+      <p className="mute">Lors du paiement, indique l'adresse {me.email}. Ton compte est activé à la main, en général dans la journée, et les offres restées sans note sont alors notées.</p></>}
   </div>);
 }
 
@@ -85,14 +90,14 @@ function AiKey({ me, setMe }) {
     {ai.error && <p className="err">Dernière erreur de l'IA : {ai.error}</p>}
     <div className="card">
       <strong>Ta consommation aujourd'hui</strong>
-      <table><tbody>{Object.entries(ai.kinds).map(([k, v]) => <tr key={k}><td>{names[k]}</td><td>{v.used}{v.limit == null ? " (sans limite)" : ` sur ${v.limit}`}</td></tr>)}</tbody></table>
-      <p className="mute">{ai.own_key ? "Tu utilises ta propre clé : pas de limite côté site, seulement celle de Google (très large pour un usage personnel)."
-        : ai.premium ? "Tu es en Premium : tes limites sont relevées, sans clé à créer."
-        : ai.shared_available ? "Tu utilises la clé commune du site, partagée entre tous les inscrits : d'où ces limites, remises à zéro chaque nuit à minuit. Au-delà, les offres gardent un score par mots-clés."
-          : "Ce site n'a pas de clé commune : ajoute la tienne pour activer l'IA."}</p>
+      <table><tbody>{Object.entries(ai.kinds).map(([k, v]) => <tr key={k}><td>{names[k]}</td><td>{v.used} sur {v.limit}</td></tr>)}</tbody></table>
+      <p className="mute">{ai.premium ? "Tu es en Premium : tes limites sont relevées. Elles repartent à zéro chaque nuit à minuit."
+        : ai.shared_available || ai.own_key ? "Ce sont les limites de la formule gratuite, remises à zéro chaque nuit à minuit. Au-delà, les offres gardent un score par mots-clés."
+          : "Ce site n'a pas de clé commune : ajoute la tienne ci-dessous pour activer l'IA."}</p>
     </div>
     <div className="card">
-      <strong><Dot ok={ai.own_key} /> Ma propre clé Gemini (gratuite, sans limite côté site)</strong>
+      <strong><Dot ok={ai.own_key} /> Ma propre clé Gemini (facultatif)</strong>
+      <p className="mute">Avec ta clé, tes demandes passent par ton quota Google au lieu du quota commun du site : tu n'es plus bloqué quand celui-ci est épuisé. Tes limites par jour restent celles de ta formule.</p>
       <details open={!ai.own_key && !ai.shared_available}><summary className="mute">Comment l'obtenir, en 2 minutes</summary>
         <ol>
           <li>Ouvre <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/apikey</a> et connecte-toi avec un compte Google.</li>
@@ -101,7 +106,7 @@ function AiKey({ me, setMe }) {
         </ol>
         <p className="mute">Elle est chiffrée dans la base, n'est jamais réaffichée et ne sert que pour tes propres demandes. Tu peux la retirer ici ou la supprimer chez Google à tout moment.</p></details>
       <div className="row"><input type="password" autoComplete="off" value={key} onChange={e => setKey(e.target.value)} placeholder={ai.own_key ? "Clé enregistrée (colle une nouvelle clé pour la remplacer)" : "Colle ta clé ici"} style={{ flex: 1, minWidth: 220 }} />
-        <button className="btn" disabled={busy || !key.trim()} onClick={() => act("Vérification de la clé auprès de Google…", async () => { await setMe(await put("/api/me/gemini", { key })); setKey(""); return "Clé vérifiée et enregistrée. Tu n'as plus de limite."; })}>Enregistrer</button>
+        <button className="btn" disabled={busy || !key.trim()} onClick={() => act("Vérification de la clé auprès de Google…", async () => { await setMe(await put("/api/me/gemini", { key })); setKey(""); return "Clé vérifiée et enregistrée."; })}>Enregistrer</button>
         {ai.own_key && <button className="btn ghost" disabled={busy} onClick={() => act("Suppression…", async () => { await setMe(await put("/api/me/gemini", { key: "" })); return "Clé retirée."; })}>Retirer ma clé</button>}</div>
     </div>
   </>);
@@ -193,10 +198,11 @@ function Account({ me, setMe, onGone }) {
 
 export default function Settings({ me, setMe, reloadMe, onGone, info }) {
   return (<>
+    {!me.ai.premium && <Premium me={me} info={info} />}
     <Search reloadMe={reloadMe} info={info} />
     <Alerts me={me} setMe={setMe} />
     <AiKey me={me} setMe={setMe} />
-    <Premium me={me} info={info} />
+    {me.ai.premium && <Premium me={me} info={info} />}
     <Account me={me} setMe={setMe} onGone={onGone} />
   </>);
 }

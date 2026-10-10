@@ -225,7 +225,7 @@ function Auth({ info, onOk, onCookies }) {
         {mode === "signup" && !closed && <ul className="perks">
           <li>Gratuit, sans publicité.</li>
           {lim && info.shared_ai && <li>IA incluse : {lim.score} offres notées et {lim.assist} lettres ou analyses par jour.</li>}
-          <li>Sans limite avec ta propre clé Gemini, gratuite elle aussi.</li>
+          {lim && /^https:\/\//.test(info.premium?.url || "") && info.premium_limits && <li>Formule Premium{info.premium.price ? ` (${info.premium.price})` : ""} : {info.premium_limits.score} offres notées et {info.premium_limits.assist} lettres par jour.</li>}
         </ul>}
       </section>
     </main>
@@ -295,6 +295,7 @@ function Feed({ me, onTrack, onUntrack, onAnalyse, status, refreshStatus, reload
       <p><b>{status?.last_24h ?? "…"}</b> nouvelles depuis 24 h, <b>{status?.total ?? "…"}</b> offres pour toi. <span className="mute">Dernière collecte {run ? ago(run.at) : "jamais"}.</span></p>
       <button className="btn ghost" onClick={refresh} disabled={busy}>{busy ? "Mise à jour…" : "Actualiser"}</button>
     </div>
+    {me.ai && me.ai.kinds.score.used >= me.ai.kinds.score.limit && <p className="note">Tu as atteint tes {me.ai.kinds.score.limit} offres notées d'après ton CV pour aujourd'hui : les suivantes gardent un score par mots-clés jusqu'à minuit.{me.ai.can_upgrade && <> <a href="#settings">Tout faire noter avec Premium</a></>}</p>}
     <div className="seg" role="tablist" aria-label="Filtrer par état">
       {STATES.map(([k, l]) => <button key={k} role="tab" aria-selected={f.state === k} className={f.state === k ? "on" : ""} onClick={() => setF({ ...f, state: k })}>{l}</button>)}
     </div>
@@ -366,10 +367,9 @@ function Tracker({ apps, reload }) {
 export function Quota({ ai, kind, what, goSettings }) {
   if (!ai) return null;
   const k = ai.kinds[kind];
-  if (ai.own_key) return <p className="mute">Tu utilises ta propre clé Gemini : pas de limite côté site.</p>;
-  if (!ai.shared_available) return <p className="note">L'IA n'est pas incluse sur ce site pour l'instant. <a href="#" onClick={goSettings}>Ajoute ta clé Gemini gratuite</a> pour l'activer.</p>;
+  if (!ai.shared_available && !ai.own_key) return <p className="note">L'IA n'est pas incluse sur ce site pour l'instant. <a href="#" onClick={goSettings}>Ajoute ta clé Gemini gratuite</a> pour l'activer.</p>;
   const left = Math.max(0, k.limit - k.used);
-  return <p className={left ? "mute" : "note"}>{left ? `Il te reste ${left} ${what} aujourd'hui sur ${k.limit}.` : `Limite du jour atteinte (${k.limit} ${what}). Retour à zéro à minuit.`} <a href="#" onClick={goSettings}>Passer en illimité avec ta propre clé gratuite</a></p>;
+  return <p className={left ? "mute" : "note"}>{left ? `Il te reste ${left} ${what} aujourd'hui sur ${k.limit}.` : `Limite du jour atteinte (${k.limit} ${what}). Retour à zéro à minuit.`}{ai.can_upgrade && <> <a href="#" onClick={goSettings}>{left ? "En avoir plus avec Premium" : "Continuer tout de suite avec Premium"}</a></>}</p>;
 }
 
 function Assistant({ me, setMe, offer, setOffer, cv, setCv, goSettings, ctx, onBack, onState }) {

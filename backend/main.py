@@ -158,7 +158,7 @@ def public():
             "contact": os.getenv("CONTACT_EMAIL", ""), "owner": os.getenv("LEGAL_NAME", ""),
             "limits": {k: lim[k] for k in quota.LABELS}, "premium_limits": {k: lim["p_" + k] for k in quota.LABELS},
             # Premium : simple lien de paiement (Stripe, PayPal, Lydia…) ; l'administrateur active ensuite le compte.
-            "premium": {"url": os.getenv("PREMIUM_URL", ""), "price": os.getenv("PREMIUM_PRICE", "")},
+            "premium": {"url": quota.premium_url(), "price": os.getenv("PREMIUM_PRICE", "")[:40]},
             "shared_ai": bool(quota.shared_key()), "ga": GA_ID, "mail": mailer.enabled(),
             "domains": domains.labels(), "regions": domains.region_labels()}
 
@@ -458,8 +458,6 @@ async def put_gemini(body: Key, bg: BackgroundTasks, u: dict = Depends(current))
     u["secrets"]["gemini"] = key
     accounts.save_secrets(u)
     accounts.set_fields(u["id"], ai_error="")
-    if key:
-        collector.requeue_unscored(u)   # les offres laissées sans note par la limite du jour vont être notées
     bg.add_task(collector.process_one, u["id"])
     return me_view(accounts.by_id(u["id"]))
 
@@ -934,7 +932,7 @@ def _target(uid: int, me: dict) -> dict:
 
 
 @app.patch("/api/admin/users/{uid}")
-def admin_patch_user(uid: int, body: UserPatch, me: dict = Depends(admin)):
+def admin_patch_user(uid: int, body: UserPatch, bg: BackgroundTasks, me: dict = Depends(admin)):
     target = accounts.by_id(uid) if body.premium_days is not None and uid == me["id"] else _target(uid, me)
     if not target:
         raise HTTPException(404, "Compte introuvable")
@@ -947,6 +945,11 @@ def admin_patch_user(uid: int, body: UserPatch, me: dict = Depends(admin)):
         fields["plan_until"] = start + days * 86400 if days else 0
     if fields:
         accounts.set_fields(uid, **fields)
+    if body.premium_days is not None:
+        quota.reset_cache()
+        if fields.get("plan_until"):   # ce que la limite gratuite avait laissé sans note va être noté
+            collector.requeue_unscored(accounts.by_id(uid))
+            bg.add_task(collector.process_one, uid)
     return {"ok": True}
 
 

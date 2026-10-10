@@ -99,7 +99,7 @@ export default function Admin({ me }) {
         {set.site.signup === "invite" && <label>Code <input value={set.site.invite_code} onChange={e => setSet({ ...set, site: { ...set.site, invite_code: e.target.value } })} /></label>}
         <label>Nombre maximal d'inscrits <input {...lim("max_users")} /></label>
       </div>
-      <p className="mute">Limites par personne et par jour, pour ceux qui utilisent la clé commune (ceux qui ont mis leur propre clé n'ont pas de limite) :</p>
+      <p className="mute">Limites par personne et par jour en formule gratuite (elles s'appliquent aussi à ceux qui ont mis leur propre clé) :</p>
       <div className="row">
         <label>Offres notées <input {...lim("score")} /></label>
         <label>Générations de l'assistant <input {...lim("assist")} /></label>
@@ -111,6 +111,7 @@ export default function Admin({ me }) {
         <label>Offres notées <input {...lim("p_score")} /></label>
         <label>Générations de l'assistant <input {...lim("p_assist")} /></label>
         <label>Analyses de CV <input {...lim("p_cv")} /></label>
+        <label>Appels communs réservés aux Premium <input {...lim("p_reserve")} style={{ width: 90 }} /></label>
       </div>
       <p className="mute">Pour vendre le Premium : mets ton lien de paiement dans la variable PREMIUM_URL et le prix affiché dans PREMIUM_PRICE (Render, onglet Environment). Quand quelqu'un a payé, clique « +30 j Premium » sur sa ligne.</p>
       <button className="btn" disabled={busy} onClick={() => save({ limits: set.limits, site: set.site })}>Enregistrer</button>

@@ -289,8 +289,9 @@ def test_pipeline():
     assert db.kv_get("src:Datadog")["ok"] and not db.kv_get("src:Qonto")["ok"]  # source en panne signalée, pas bloquante
     run(collector.run_once())   # distribue les deux offres Thales à chacun
 
-    # limite du jour sur la clé commune : au-delà, Alice garde le score par mots-clés ; Bob (clé perso) n'est pas limité
-    db.kv_set("limits", {"score": db.usage_get(a["id"], quota.today())["score"] + 1})
+    # limite du jour de la formule gratuite : au-delà, Alice garde le score par mots-clés ; Bob, en Premium, continue
+    db.kv_set("limits", {"score": db.usage_get(a["id"], quota.today())["score"] + 1, "p_score": 999})
+    accounts.set_fields(b["id"], plan_until=__import__("time").time() + 86400)
     for i in range(3):
         extra_ft.append(ft(f"Q{i}", f"Stage ingénieur réseaux équipe {i}", f"Societe{i}", "75 - Paris"))
     run(collector.run_once(force=True))
@@ -300,6 +301,7 @@ def test_pipeline():
     assert all(ra[f"Stage ingénieur réseaux équipe {i}"].notified for i in range(3))     # triées quand même
     assert all(rb[f"Stage ingénieur réseaux équipe {i}"].ai_score == 85 for i in range(3))
     db.kv_set("limits", {})
+    accounts.set_fields(b["id"], plan_until=0)
 
     # panne passagère de Gemini : on attend le passage suivant au lieu de se rabattre tout de suite sur les mots-clés
     gemini_fail["on"] = True
@@ -394,17 +396,20 @@ def test_api():
         c.delete(f"/api/applications/{aid}", headers=hc)
         assert c.get("/api/applications", headers=hz).json()[0]["status"] == 3
 
-        # assistant : limite du jour sur la clé commune, puis plus de limite avec sa propre clé
+        # assistant : limite du jour de la formule ; une clé personnelle ne la lève pas, elle change seulement qui paie
         assert c.put("/api/admin/settings", json={"limits": {"assist": 2}}, headers=hc).json()["limits"]["assist"] == 2
         ask = lambda: c.post("/api/ai", json={"task": "letter", "offer": "Stage réseaux"}, headers=hz)
         r1, r2, r3 = ask(), ask(), ask()
         assert r1.json()["text"] == "Texte généré" and r2.json()["ai"]["kinds"]["assist"] == {"used": 2, "limit": 2}
-        assert r3.status_code == 429 and "propre clé Gemini" in r3.json()["detail"]
+        assert r3.status_code == 429 and "Limite du jour atteinte" in r3.json()["detail"] and "propre clé" not in r3.json()["detail"]
         assert c.put("/api/me/gemini", json={"key": "cle-invalide-cle-invalide"}, headers=hz).status_code == 400
         assert c.put("/api/me/gemini", json={"key": "court"}, headers=hz).status_code == 400
         me = c.put("/api/me/gemini", json={"key": "cle-de-zoe-" + "x" * 20}, headers=hz).json()
-        assert me["ai"]["own_key"] and me["ai"]["kinds"]["assist"]["limit"] is None
-        assert ask().status_code == 200 and gemini_keys[-1].startswith("cle-de-zoe-")
+        assert me["ai"]["own_key"] and me["ai"]["kinds"]["assist"]["limit"] == 2                # la limite reste celle de la formule
+        assert ask().status_code == 429                                                          # la clé ne débloque rien
+        c.put("/api/admin/settings", json={"limits": {"assist": 3}}, headers=hc)
+        assert ask().status_code == 200 and gemini_keys[-1].startswith("cle-de-zoe-")           # sous la limite : c'est sa clé qui sert
+        assert ask().status_code == 429
         assert "cle-de-zoe" not in json.dumps(c.get("/api/me", headers=hz).json())      # la clé n'est jamais renvoyée
         assert not c.put("/api/me/gemini", json={"key": ""}, headers=hz).json()["ai"]["own_key"]
 
@@ -603,6 +608,63 @@ def test_premium():
     main._hits.clear()
 
 
+def test_plan_limits(monkeypatch):
+    """Les limites suivent la formule, pas la clé ; ceux qui paient gardent une part réservée du quota commun."""
+    import time as _t
+    free = accounts.create("gratuit@ex.fr", "G", "motdepasse1")
+    keyed = accounts.create("cle@ex.fr", "C", "motdepasse1")
+    paid = accounts.create("payant@ex.fr", "P", "motdepasse1")
+    keyed["secrets"]["gemini"] = "cle-perso-" + "y" * 20
+    accounts.save_secrets(keyed)
+    free, keyed = accounts.by_id(free["id"]), accounts.by_id(keyed["id"])
+    day, before = quota.today(), db.usage_get(0, quota.today()).get("req", 0)
+    db.kv_set("limits", {"assist": 2, "p_assist": 9, "shared_requests": before + 10, "p_reserve": 4})
+    monkeypatch.delenv("PREMIUM_URL", raising=False)
+    quota.reset_cache()
+    try:
+        # clé personnelle en formule gratuite : c'est sa clé qui sert, mais avec la limite gratuite
+        assert quota.grant(keyed, "assist", 5) == ("cle-perso-" + "y" * 20, True, 2)
+        quota.record(keyed, "assist", 2, True)
+        with pytest.raises(quota.QuotaError) as e:
+            quota.grant(keyed, "assist")
+        assert "Limite du jour atteinte (2" in str(e.value) and "Premium" not in str(e.value)    # rien à vendre : pas de réclame
+        assert quota.view(keyed)["kinds"]["assist"] == {"used": 2, "limit": 2} and not quota.view(keyed)["can_upgrade"]
+        assert db.usage_get(0, day).get("req", 0) == before                                      # sa clé ne coûte rien au site
+        monkeypatch.setenv("PREMIUM_URL", "https://payer.test/premium")
+        with pytest.raises(quota.QuotaError) as e:
+            quota.grant(keyed, "assist")
+        assert "La formule Premium en donne 9 par jour" in str(e.value) and quota.view(keyed)["can_upgrade"]
+        monkeypatch.setenv("PREMIUM_URL", "javascript:alert(1)")                                 # lien refusé s'il n'est pas en https
+        assert quota.premium_url() == "" and not quota.view(keyed)["can_upgrade"]
+        monkeypatch.setenv("PREMIUM_URL", "https://payer.test/premium")
+        # le même compte en Premium : limite relevée, toujours avec sa clé
+        accounts.set_fields(keyed["id"], plan_until=_t.time() + 86400)
+        assert quota.grant(accounts.by_id(keyed["id"]), "assist", 20)[1:] == (True, 7)
+        accounts.set_fields(keyed["id"], plan_until=0)
+        # part réservée : sans aucun Premium, les comptes gratuits vont jusqu'au bout du quota commun
+        db.usage_add(0, day, "req", 7)                                                           # il reste 3 appels communs
+        quota.reset_cache()
+        assert quota.reserve() == 0 and quota.grant(free, "assist")[1] is False
+        accounts.set_fields(paid["id"], plan_until=_t.time() + 86400)
+        paid = accounts.by_id(paid["id"])
+        quota.reset_cache()
+        assert quota.reserve() == 4
+        with pytest.raises(quota.QuotaError) as e:
+            quota.grant(free, "assist")
+        assert "comptes gratuits" in str(e.value) and "Premium" in str(e.value)
+        assert quota.grant(paid, "assist", 3) == ("cle-commune", False, 3)                       # celui qui paie passe
+        assert not quota.view(paid)["can_upgrade"]
+        db.usage_add(0, day, "req", 3)                                                           # quota commun à zéro
+        with pytest.raises(quota.QuotaError):
+            quota.grant(paid, "assist")
+    finally:
+        db.usage_add(0, day, "req", before - db.usage_get(0, day).get("req", 0))
+        db.kv_set("limits", {})
+        for u in (free, keyed, paid):
+            accounts.remove(u["id"])
+        quota.reset_cache()
+
+
 def test_emails(monkeypatch):
     """Confirmation de l'adresse et mot de passe oublié par e-mail."""
     import re as _re
@@ -766,7 +828,7 @@ def test_domains_from_cv():
 
 
 def test_own_key_scores_the_rest():
-    """Ajouter sa propre clé remet en file les offres restées sans note (et seulement celles au-dessus du seuil)."""
+    """Passer en Premium remet en file les offres restées sans note (et seulement celles au-dessus du seuil)."""
     import time
     from sqlalchemy import insert, select
     u = accounts.create("reste@ex.fr", "Reste", "motdepasse")
