@@ -219,6 +219,9 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
 - Décoration personnelle (02/11, demandée par l'utilisateur) : `frontend/src/Omaima.jsx`, carte fleurie « Bonne recherche,
   Omaima » affichée seulement si le prénom du compte est Omaima (ou Oumaima, accents ignorés) ET que la recherche est
   « cdi » : dans Réglages → Je cherche et en haut de l'onglet Offres. Styles `.om-*` à la fin de `style.css`.
+- Textes CDI (02/11) : dans Réglages, la phrase « Ce que tu veux comme… » et son exemple suivent `contract` ; à l'analyse
+  du CV, l'« objectif » demandé à l'IA parle d'emploi en CDI si le compte cherche un CDI (`ai.analyse_cv(..., contract)`).
+  Rappel : la phrase n'est remplie d'après le CV que si l'analyse réussit (adresse confirmée ou clé personnelle).
 - 18 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.

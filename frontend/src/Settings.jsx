@@ -144,9 +144,9 @@ function Search({ me, reloadMe, info }) {
         {regs.map(([k, l]) => <label key={k} className={crit.regions.includes(k) ? "on" : ""}><input type="checkbox" checked={crit.regions.includes(k)} onChange={() => toggle("regions", k)} />{l}</label>)}
       </fieldset>
       <p className="mute">Les offres en télétravail ou sans lieu précisé te sont proposées quelles que soient tes régions.</p>
-      <label className="block">Ce que tu veux comme stage (durée, date, spécialité, ville)
+      <label className="block">{crit.contract === "cdi" ? "Ce que tu veux comme poste (métier, date de début, spécialité, ville)" : "Ce que tu veux comme stage (durée, date, spécialité, ville)"}
         <textarea value={crit.goal} maxLength={300} onChange={e => setCrit({ ...crit, goal: e.target.value })} style={{ minHeight: 60 }} /></label>
-      <p className="mute">Ton CV dit ce que tu sais faire, cette phrase dit ce que tu veux : l'IA utilise les deux pour noter les offres et écrire tes lettres. Elle est remplie d'après ton CV au premier import, corrige-la librement. Exemple : « Stage de fin d'études de 6 mois à partir de mars 2027, en logiciel embarqué ou FPGA, à Toulouse ou en Île-de-France ».</p>
+      <p className="mute">Ton CV dit ce que tu sais faire, cette phrase dit ce que tu veux : l'IA utilise les deux pour noter les offres et écrire tes lettres. Elle est remplie d'après ton CV au premier import, corrige-la librement. Exemple : {crit.contract === "cdi" ? "« CDI d'assistante RH ou de gestionnaire de paie à partir de janvier 2027, à Lyon ou dans un rayon de 30 km »" : "« Stage de fin d'études de 6 mois à partir de mars 2027, en logiciel embarqué ou FPGA, à Toulouse ou en Île-de-France »"}.</p>
       <div className="row">
         <label>M'alerter si le score de l'IA atteint <input {...num("notify_ai")} /></label>
         <label>Sans IA, si le score par mots-clés atteint <input {...num("notify_kw")} /></label>

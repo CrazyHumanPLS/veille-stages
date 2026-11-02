@@ -110,7 +110,8 @@ async def check_key(key: str) -> None:
     await generate("Réponds uniquement : OK", key, timeout=30)
 
 
-async def analyse_cv(cv_text: str, goal: str, key: str) -> dict:
+async def analyse_cv(cv_text: str, goal: str, key: str, contract: str = "stage") -> dict:
+    wanted = "l'emploi en CDI recherché" if contract == "cdi" else "le stage recherché"
     domain_list = " ; ".join(f"{k} = {v['label']}" for k, v in dom.DOMAINS.items())
     prompt = (
         "Voici le ou les CV d'une même personne (une version par domaine visé). "
@@ -124,7 +125,7 @@ async def analyse_cv(cv_text: str, goal: str, key: str) -> dict:
         '- "postes_cibles" : 6 intitulés de poste réalistes pour ce profil\n'
         '- "conseils_cv" : 5 améliorations concrètes du CV\n'
         f'- "domaines" : 1 à 3 codes parmi cette liste, ceux qui correspondent le mieux au CV : {domain_list}\n'
-        '- "objectif" : une phrase à la première personne qui résume le stage recherché d\'après le CV '
+        f'- "objectif" : une phrase à la première personne qui résume {wanted} d\'après le CV '
         '(type de poste et 3 ou 4 spécialités), sans ville, sans date et sans nom de personne\n\n'
         f"CV :\n{cv_text[:12000]}")
     data = _loads(await generate(prompt, key, as_json=True))

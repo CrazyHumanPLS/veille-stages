@@ -599,7 +599,7 @@ async def _analyse(u: dict) -> str:
     asked = before["goal"] if before["search_set"] or not before["goal_is_default"] else "non précisé, à déduire du CV"
     try:
         key, own, _ = quota.grant(u, "cv")
-        analysis = await ai.analyse_cv(cvstore.block(u, each=4000), asked, key)
+        analysis = await ai.analyse_cv(cvstore.block(u, each=4000), asked, key, before["contract"])
     except Exception as e:
         return str(e)
     quota.record(u, "cv", 1, own)

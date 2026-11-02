@@ -27,7 +27,7 @@ export default function OmaimaCard({ compact = false }) {
         <p className="om-hi">Bonne recherche, <span>Omaima</span> 🌷</p>
         {compact
           ? <p className="om-txt">Tes offres de CDI en RH autour de Lyon arrivent ici dès qu'elles sont trouvées.</p>
-          : <p className="om-txt">Cet espace CDI a été préparé rien que pour toi : assistante RH, gestionnaire RH, paie et ADP, à Lyon et alentours. Les nouvelles offres arrivent toutes seules, il ne te reste qu'à choisir les meilleures.</p>}
+          : <p className="om-txt">Cet espace CDI a été préparé rien que pour toi. J'espère que tu vas être la meilleure des RH, et surtout une <b>GENTILLE</b> RH 💗</p>}
       </div>
     </div>
   );
