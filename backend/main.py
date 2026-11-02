@@ -145,7 +145,7 @@ def site_settings() -> dict:
 
 
 @app.get("/api/health")
-def health():
+async def health():   # « async » : répond sans attendre une place libre parmi les fils de calcul
     return {"ok": True}
 
 
@@ -160,7 +160,8 @@ def public():
             # Premium : simple lien de paiement (Stripe, PayPal, Lydia…) ; l'administrateur active ensuite le compte.
             "premium": {"url": quota.premium_url(), "price": os.getenv("PREMIUM_PRICE", "")[:40]},
             "shared_ai": bool(quota.shared_key()), "ga": GA_ID, "mail": mailer.enabled(),
-            "domains": domains.labels(), "regions": domains.region_labels()}
+            "domains": domains.labels(), "regions": domains.region_labels(),
+            "contracts": domains.CONTRACTS}
 
 
 @app.get("/api/public/offers")
@@ -542,6 +543,8 @@ def put_criteria(body: dict, bg: BackgroundTasks, u: dict = Depends(current)):
         s["domains"] = domains.clean(body["domains"]) or list(domains.DEFAULT_DOMAINS)
     if isinstance(body.get("regions"), list):
         s["regions"] = domains.clean_regions(body["regions"])        # liste vide = toute la France
+    if body.get("contract") in domains.CONTRACTS:
+        s["contract"] = body["contract"]
     if isinstance(body.get("goal"), str):
         # phrase vide, ou restée identique à la phrase proposée : on la laisse suivre les domaines et les régions
         goal = " ".join(body["goal"].split())[:300]

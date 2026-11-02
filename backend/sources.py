@@ -66,8 +66,10 @@ def _ft_map(o: dict) -> dict:
 
 
 async def ft_search(h: httpx.AsyncClient, mots: str, region: str = "", departement: str = "",
-                    days: int | None = 3, limit: int = 50) -> list[dict]:
+                    days: int | None = 3, limit: int = 50, contrat: str = "") -> list[dict]:
     params = {"motsCles": mots, "range": f"0-{limit - 1}", "sort": "1"}
+    if contrat:
+        params["typeContrat"] = contrat
     if days:
         params["publieeDepuis"] = str(days)
     if departement:
@@ -81,6 +83,19 @@ async def ft_search(h: httpx.AsyncClient, mots: str, region: str = "", departeme
     if r.status_code not in (200, 206):
         raise RuntimeError(f"France Travail {r.status_code} : {r.text[:150]}")
     return [_ft_map(o) for o in r.json().get("resultats", [])]
+
+
+async def france_travail_cdi(h: httpx.AsyncClient, searches: list[tuple[str, str]]) -> list[dict]:
+    """Emplois en CDI : (mots, département) ; la source la plus complète pour les CDI quand l'accès est ouvert."""
+    out, errors = [], []
+    for words, dep in searches:
+        try:
+            out += [{**o, "kind": "cdi"} for o in await ft_search(h, words, departement=dep, contrat="CDI")]
+        except Exception as e:
+            errors.append(str(e))
+    if errors and not out:
+        raise RuntimeError(errors[0])
+    return out
 
 
 async def france_travail(h: httpx.AsyncClient, crit: dict) -> list[dict]:
@@ -100,25 +115,31 @@ def adzuna_enabled() -> bool:
     return bool(os.getenv("ADZUNA_APP_ID") and os.getenv("ADZUNA_APP_KEY"))
 
 
-async def adzuna(h: httpx.AsyncClient, queries: list[str]) -> list[dict]:
-    # Une requête par couple de mots, tous obligatoires (ex. "stage cybersécurité"), sur toute la France.
+async def adzuna(h: httpx.AsyncClient, queries: list, kind: str = "stage") -> list[dict]:
+    """Une requête par couple de mots, tous obligatoires (ex. "stage cybersécurité"), sur toute la France.
+    kind="cdi" : chaque requête est (mots, ville) ; on cherche des CDI dans un rayon de 40 km autour de la ville."""
     results, errors = [], []
     for i, q in enumerate(queries):
         if i:
             await asyncio.sleep(ADZUNA_PAUSE)   # Adzuna limite le nombre de demandes par minute
-        r = await h.get("https://api.adzuna.com/v1/api/jobs/fr/search/1", params={
-            "app_id": os.getenv("ADZUNA_APP_ID"), "app_key": os.getenv("ADZUNA_APP_KEY"),
-            "what_and": q, "what_exclude": "alternance apprentissage",
-            "sort_by": "date", "max_days_old": 10, "results_per_page": 50, "content-type": "application/json"})
+        params = {"app_id": os.getenv("ADZUNA_APP_ID"), "app_key": os.getenv("ADZUNA_APP_KEY"),
+                  "what_and": q, "what_exclude": "alternance apprentissage",
+                  "sort_by": "date", "max_days_old": 10, "results_per_page": 50, "content-type": "application/json"}
+        if kind == "cdi":
+            words, city = q
+            params.update(what_and=words, what_exclude="alternance apprentissage stage stagiaire", permanent=1)
+            if city:
+                params.update(where=city, distance=40)
+        r = await h.get("https://api.adzuna.com/v1/api/jobs/fr/search/1", params=params)
         if r.status_code != 200:
             errors.append(f"Adzuna {r.status_code} : {r.text[:150]}")
             continue
         results += r.json().get("results", [])
     if errors and not results:
         raise RuntimeError(errors[0])
-    return [_offer("Adzuna", o.get("id"), (o.get("company") or {}).get("display_name") or "Entreprise non précisée",
-                   o.get("title"), (o.get("location") or {}).get("display_name", ""), o.get("redirect_url"),
-                   o.get("description", ""), o.get("created", ""), geo_ok=True)
+    return [{**_offer("Adzuna", o.get("id"), (o.get("company") or {}).get("display_name") or "Entreprise non précisée",
+                      o.get("title"), (o.get("location") or {}).get("display_name", ""), o.get("redirect_url"),
+                      o.get("description", ""), o.get("created", ""), geo_ok=True), "kind": kind}
             for o in results]
 
 

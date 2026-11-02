@@ -34,9 +34,10 @@ DIST = pathlib.Path(__file__).parent.parent / "frontend" / "dist"
 # Adresse et nom court de chaque domaine. Les adresses ne doivent plus changer une fois en ligne.
 SLUGS = {"reseaux": "reseaux-cybersecurite-cloud", "embarque": "embarque-electronique",
          "logiciel": "developpement-logiciel", "data": "data-ia", "industrie": "mecanique-industrie-energie",
-         "gestion": "commerce-marketing-finance-rh"}
+         "gestion": "commerce-marketing-finance-rh", "rh": "ressources-humaines-paie"}
 TITLES = {"reseaux": "réseaux et cybersécurité", "embarque": "embarqué et électronique", "logiciel": "développeur",
-          "data": "data et IA", "industrie": "mécanique et industrie", "gestion": "marketing, finance et RH"}
+          "data": "data et IA", "industrie": "mécanique et industrie", "gestion": "marketing, finance et RH",
+          "rh": "ressources humaines et paie"}
 # Comment on écrit « dans telle région », et les villes que les étudiants tapent vraiment dans Google.
 IN = {"idf": "en Île-de-France", "ara": "en Auvergne-Rhône-Alpes", "occ": "en Occitanie",
       "naq": "en Nouvelle-Aquitaine", "paca": "en Provence-Alpes-Côte d'Azur", "hdf": "dans les Hauts-de-France",

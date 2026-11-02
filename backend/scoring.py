@@ -52,6 +52,7 @@ DEFAULT_CRITERIA = {
 
 # ---------- réglages propres à chaque utilisateur (onglet Réglages) ----------
 USER_DEFAULTS = {
+    "contract": "stage",      # « stage » ou « cdi » : le type de poste cherché
     "goal": "",               # vide : phrase construite d'après ses domaines et ses régions
     "profile_keywords": [],   # mots tirés automatiquement de son CV (remplis par l'analyse Gemini)
     "min_kw": 25,             # en dessous : l'offre ne lui est pas proposée
@@ -107,10 +108,11 @@ def pool_criteria(site: dict | None = None) -> dict:
     return {**site, "strong": every["strong"], "tech": every["tech"], "negative": [], "profile_keywords": []}
 
 
-def default_goal(keys: list[str], regions: list[str]) -> str:
+def default_goal(keys: list[str], regions: list[str], contract: str = "stage") -> str:
     what = ", ".join(dom.DOMAINS[k]["label"].lower() for k in keys)
     where = ", ".join(dom.REGIONS[r][0] for r in regions) if regions else "partout en France"
-    return f"Stage dans ces domaines : {what}. Lieu : {where}."
+    head = "Emploi en CDI" if contract == "cdi" else "Stage"
+    return f"{head} dans ces domaines : {what}. Lieu : {where}."
 
 
 def user_criteria(u: dict, site: dict | None = None) -> dict:
@@ -126,7 +128,8 @@ def user_criteria(u: dict, site: dict | None = None) -> dict:
         c[k] = s[k] if isinstance(s.get(k), list) else mine[k]
     c["custom_lists"] = [k for k in USER_LISTS if isinstance(s.get(k), list)]
     c["goal_is_default"] = not (s.get("goal") or "").strip()
-    c["goal"] = (s.get("goal") or "").strip() or default_goal(c["domains"], c["regions"])
+    c["contract"] = "cdi" if s.get("contract") == "cdi" else "stage"
+    c["goal"] = (s.get("goal") or "").strip() or default_goal(c["domains"], c["regions"], c["contract"])
     return c
 
 
@@ -214,8 +217,13 @@ def is_idf(place: str, unknown_ok: bool = True) -> bool:
 
 # ---------- score par mots-clés (0 à 100) ----------
 def kw_score(title: str, description: str, crit: dict | None = None) -> int:
+    return kw_score_n(norm(title), norm(description), crit)
+
+
+def kw_score_n(t: str, d: str, crit: dict | None = None) -> int:
+    """Même calcul que kw_score, avec un titre et un texte déjà passés par norm() (évite de les normaliser
+    une fois par domaine : c'est la partie la plus lente sur le petit processeur de Render)."""
     crit = crit or criteria()
-    t, d = norm(title), norm(description)
     score = 0
     for w in crit["strong"]:
         if _has(w, t):

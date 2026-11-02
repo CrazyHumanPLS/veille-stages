@@ -84,6 +84,7 @@ offers = Table(
     Column("first_seen", Float, index=True),
     Column("kw_score", Integer, default=0),           # score général (mots-clés par défaut)
     Column("ext_id", String(200), default=""),         # référence de l'offre chez la source
+    Column("kind", String(10), default="stage"),       # « stage » ou « cdi » (emploi)
 )
 
 user_offers = Table(
@@ -123,7 +124,8 @@ meta.create_all(engine)
 
 # Colonnes ajoutées après la première mise en ligne : create_all ne modifie pas une table existante.
 # Pour ajouter une colonne plus tard, l'inscrire ici : ("table", "colonne", "TYPE SQL DEFAULT …").
-for _table, _col, _type in (("users", "plan_until", "FLOAT DEFAULT 0"), ("users", "email_verified", "INTEGER DEFAULT 1")):
+for _table, _col, _type in (("users", "plan_until", "FLOAT DEFAULT 0"), ("users", "email_verified", "INTEGER DEFAULT 1"),
+                             ("offers", "kind", "VARCHAR(10) DEFAULT 'stage'")):
     try:
         with engine.begin() as _c:
             _c.exec_driver_sql(f"ALTER TABLE {_table} ADD COLUMN {_col} {_type}")

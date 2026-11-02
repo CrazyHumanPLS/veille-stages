@@ -53,12 +53,18 @@ def _state(name: str, ok: bool, found: int = 0, new: int = 0, error: str = "") -
                               "error": error[:200], "last_ok": time.time() if ok else prev.get("last_ok", 0)})
 
 
+_NOT_CDI = re.compile(r"alternan|apprenti|interim|\bcdd\b|stagiaire|\bstage\b|freelance|independant")
+
+
 def keep(raw: dict, crit: dict) -> dict | None:
     """Applique les filtres. Renvoie la ligne prête à enregistrer, ou None si l'offre est écartée."""
     if not raw["title"] or not raw["url"].lower().startswith(("https://", "http://")):
         return None   # pas de titre, ou lien qui n'est pas une adresse web (jamais de « javascript: »)
-    if not scoring.is_internship(raw["title"], raw["description"]):
+    kind = raw.get("kind") or "stage"
+    if kind == "stage" and not scoring.is_internship(raw["title"], raw["description"]):
         return None
+    if kind == "cdi" and (scoring.is_internship(raw["title"], "") or _NOT_CDI.search(scoring.norm(raw["title"]))):
+        return None   # recherche d'emploi : on écarte stages, alternances et intérim
     if not raw["geo_ok"] and not dom.in_france(raw["place"]):
         return None   # le stock commun couvre toute la France ; chacun filtre ensuite sur ses régions
     published = scoring.published_date(raw["published"]) or raw["published"]
@@ -71,7 +77,7 @@ def keep(raw: dict, crit: dict) -> dict | None:
             "source": raw["source"], "company": raw["company"], "title": raw["title"], "place": raw["place"],
             "url": raw["url"], "description": raw["description"],
             "published": published,
-            "ext_id": raw["ext_id"][:200], "first_seen": time.time(), "kw_score": score}
+            "ext_id": raw["ext_id"][:200], "first_seen": time.time(), "kw_score": score, "kind": kind}
 
 
 _seen: dict[str, list[dict]] = {}   # entreprise -> offres déjà dans le stock commun
@@ -158,19 +164,40 @@ async def _run_source(name: str, coro, crit: dict, distinct: bool = False) -> in
 
 
 def domains_in_use() -> list[str]:
-    """Domaines cochés par au moins un compte actif : on n'interroge Adzuna que pour ceux-là."""
+    """Domaines cochés par au moins un compte actif qui cherche un STAGE : on n'interroge Adzuna que pour ceux-là."""
     used = set()
     for u in accounts.active(INACTIVE_DAYS):
+        if (u["settings"] or {}).get("contract") == "cdi":
+            continue
         used.update(dom.clean((u["settings"] or {}).get("domains")) or dom.DEFAULT_DOMAINS)
     return [k for k in dom.DOMAINS if k in (used or set(dom.DEFAULT_DOMAINS))]
+
+
+def cdi_searches(site: dict) -> list[tuple[str, str, str]]:
+    """(mots, ville, département) pour les comptes actifs qui cherchent un CDI. Ville vide = toute la France."""
+    out = []
+    for u in accounts.active(INACTIVE_DAYS):
+        s = u["settings"] or {}
+        if s.get("contract") != "cdi":
+            continue
+        regions = dom.clean_regions(s["regions"]) if isinstance(s.get("regions"), list) else list(dom.DEFAULT_REGIONS)
+        places = [dom.MAIN_CITY[r] for r in regions if r in dom.MAIN_CITY] or [("", "")]
+        for k in dom.clean(s.get("domains")) or dom.DEFAULT_DOMAINS:
+            for words in dom.cdi_queries(k, scoring.domain_lists(k, site)["adzuna"]):
+                for city, dep in places:
+                    if (words, city, dep) not in out:
+                        out.append((words, city, dep))
+    return out
 
 
 async def collect(force: bool = False) -> int:
     site = scoring.criteria()
     crit = scoring.pool_criteria(site)
     queries = scoring._merge(*(scoring.domain_lists(k, site)["adzuna"] for k in domains_in_use()))
-    # Plus il y a de requêtes, plus on espace les passages, pour rester dans le budget quotidien d'Adzuna.
-    adzuna_every = max(EVERY["adzuna"], 1440 * len(queries) / max(1, ADZUNA_CALLS_PER_DAY))
+    cdi = cdi_searches(site)
+    # Plus il y a de requêtes, plus on espace les passages, pour rester dans le budget quotidien d'Adzuna
+    # (partagé entre les recherches de stage et d'emploi).
+    adzuna_every = max(EVERY["adzuna"], 1440 * (len(queries) + len(cdi)) / max(1, ADZUNA_CALLS_PER_DAY))
     await asyncio.to_thread(load_seen)
     jobs = []
     global _slots, _store_turn
@@ -181,6 +208,11 @@ async def collect(force: bool = False) -> int:
             jobs.append(_run_source("France Travail", sources.france_travail(h, crit), crit))
         if sources.adzuna_enabled() and queries and _due("Adzuna", adzuna_every, force):
             jobs.append(_run_source("Adzuna", sources.adzuna(h, queries), crit))
+        if cdi and sources.adzuna_enabled() and _due("Adzuna (CDI)", adzuna_every, force):
+            jobs.append(_run_source("Adzuna (CDI)", sources.adzuna(h, [(w, c) for w, c, _ in cdi], "cdi"), crit))
+        if cdi and sources.ft_enabled() and _due("France Travail (CDI)", EVERY["ft"], force):
+            searches = list(dict.fromkeys((w, d) for w, _, d in cdi))
+            jobs.append(_run_source("France Travail (CDI)", sources.france_travail_cdi(h, searches), crit))
         for kind, fetch in sources.ATS.items():
             for c in sources.companies().get(kind, []):
                 if _due(c["name"], EVERY["ats"], force):
@@ -224,7 +256,8 @@ def sync_user(u: dict, full: bool = False, site: dict | None = None) -> int:
     since = oldest if full or not u["cursor"] else max(oldest, u["cursor"] - 600)
     o, uo = db.offers, db.user_offers
     with db.engine.connect() as c:
-        pool = c.execute(select(o.c.id, o.c.company, o.c.title, o.c.description, o.c.first_seen, o.c.place, o.c.published)
+        pool = c.execute(select(o.c.id, o.c.company, o.c.title, o.c.description, o.c.first_seen, o.c.place, o.c.published,
+                                o.c.kind)
                          .where(o.c.first_seen > since)).all()
         mine = {r.offer_id: r for r in c.execute(
             select(uo.c.offer_id, uo.c.state, uo.c.ai_score, uo.c.kw_score).where(uo.c.user_id == uid))}
@@ -234,6 +267,10 @@ def sync_user(u: dict, full: bool = False, site: dict | None = None) -> int:
         newest = max(newest, r.first_seen)
         have = mine.get(r.id)
         if have and not full:
+            continue
+        if (r.kind or "stage") != crit["contract"]:
+            if have and have.state == "new":
+                drop.append(r.id)     # il a changé de type de poste (stage ↔ CDI)
             continue
         if not have and scoring.too_old(r.published, MAX_AGE_DAYS, now):
             continue   # dans le stock depuis peu, mais mise en ligne il y a trop longtemps

@@ -127,6 +127,11 @@ function Search({ reloadMe, info }) {
     {msg && <p className="note">{msg}</p>}
     <div className="card">
       <fieldset className="choices">
+        <legend>Je cherche</legend>
+        {Object.entries(info?.contracts || { stage: "Un stage" }).map(([k, l]) => <label key={k} className={(crit.contract || "stage") === k ? "on" : ""}><input type="radio" name="contract" checked={(crit.contract || "stage") === k} onChange={() => setCrit({ ...crit, contract: k })} />{l}</label>)}
+      </fieldset>
+      {crit.contract === "cdi" && <p className="mute">Emplois en CDI trouvés autour de la grande ville de chaque région cochée (40 km), par exemple Lyon pour Auvergne-Rhône-Alpes. Les stages ne te sont plus proposés.</p>}
+      <fieldset className="choices">
         <legend>Mes domaines</legend>
         {doms.map(([k, l]) => <label key={k} className={crit.domains.includes(k) ? "on" : ""}><input type="checkbox" checked={crit.domains.includes(k)} onChange={() => toggle("domains", k)} />{l}</label>)}
       </fieldset>

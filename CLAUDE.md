@@ -196,7 +196,27 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   commune est une clé Gemini gratuite plafonnée à 800 appels par jour ; quelques abonnés actifs suffiront à
   l'épuiser, il faudra alors une clé payante (coût à comparer au prix de l'abonnement). Pistes : paiement
   automatique (webhook Stripe) à la place du bouton « +30 j Premium », alertes immédiates réservées au Premium.
-- 17 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
+- Pannes « health check timed out » (fin octobre, une tous les 1 à 3 jours, sans manque de mémoire) : cause trouvée le
+  02/11. `board._scan` (vitrine + pages Google) recalculait toutes les 10 minutes le score des 2 500 offres pour
+  chaque domaine : 5 à 7 s de calcul sur un ordinateur normal, bien plus sur le petit processeur de Render gratuit,
+  qui ne répondait plus à temps. Corrigé : scores gardés d'un calcul à l'autre par offre (`board._memo`, vidé si les
+  mots-clés changent), normalisation du texte faite une fois par offre au lieu d'une fois par domaine
+  (`scoring.kw_score_n`), `/api/health` en `async` (répond sans attendre un fil de calcul libre). Mesure : 2e calcul
+  0,1 s au lieu de 7,3 s, résultat identique octet pour octet. Règle : tout calcul périodique sur le stock doit être
+  incrémental.
+- Recherche d'emploi en CDI (02/11, demandée pour une amie : assistante RH, gestionnaire RH, ADP et paie, à Lyon et
+  alentours). Réglage par compte `contract` (« stage » par défaut ou « cdi », Réglages → Ma recherche → Je cherche).
+  Nouveau domaine `rh` (Ressources humaines, paie, ADP) avec ses recherches CDI (`domains.DOMAINS["rh"]["cdi"]`,
+  `domains.cdi_queries` pour les autres domaines). Colonne `offers.kind` (« stage » ou « cdi », migration dans
+  `db.py`). Collecte : `collector.cdi_searches` → source « Adzuna (CDI) » (`permanent=1`, `where` = ville principale
+  de chaque région cochée, `domains.MAIN_CITY`, rayon 40 km) et, si l'accès France Travail est ouvert, « France
+  Travail (CDI) » (`typeContrat=CDI`, département de la ville). `keep` écarte stages, alternances, intérim, CDD.
+  `sync_user` ne propose que le type cherché ; la vitrine et les pages Google restent « stage » uniquement. Budget
+  Adzuna partagé entre stages et CDI (`ADZUNA_CALLS_PER_DAY`), donc pas « dès la mise en ligne » : toutes les
+  quelques heures. Pages Google : `/stages/ressources-humaines-paie` ajoutée. Tests simulés uniquement.
+- Code récupéré le 02/11 depuis GitHub (`CrazyHumanPLS/veille-stages`, **dépôt public** : aucun secret dedans,
+  vérifié), l'ordinateur n'étant pas relié à la conversation.
+- 18 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.
 

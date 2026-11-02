@@ -6,7 +6,7 @@ Le calcul parcourt le stock commun ; il est fait au plus une fois toutes les 10 
 import threading
 import time
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, or_
 
 import db
 import domains as dom
@@ -23,11 +23,14 @@ MAX_ROWS = 2500      # garde-fou mémoire
 # Formulation courte de chaque domaine, pour les titres et les publications.
 SHORT = {"reseaux": "réseaux, cybersécurité et cloud", "embarque": "embarqué et électronique",
          "logiciel": "développement logiciel", "data": "data et IA",
-         "industrie": "mécanique, industrie et énergie", "gestion": "commerce, marketing, finance et RH"}
+         "industrie": "mécanique, industrie et énergie", "gestion": "commerce, marketing, finance et RH",
+         "rh": "ressources humaines et paie"}
 TAGS = {"reseaux": "#cybersécurité #réseaux #cloud", "embarque": "#embarqué #électronique", "logiciel": "#développement #dev",
-        "data": "#data #IA", "industrie": "#industrie #mécanique", "gestion": "#marketing #finance #RH"}
+        "data": "#data #IA", "industrie": "#industrie #mécanique", "gestion": "#marketing #finance #RH",
+        "rh": "#RH #paie"}
 
 _cache = {"at": 0.0, "data": None}
+_memo: dict = {}   # identifiant d'offre -> {domaine: (score, compétences)}
 _lock = threading.Lock()
 
 
@@ -41,27 +44,43 @@ def _scan(now: float) -> dict[str, list[dict]]:
     o = db.offers
     stmt = (select(o.c.id, o.c.source, o.c.company, o.c.title, o.c.place, o.c.url, o.c.published, o.c.first_seen,
                    func.substr(o.c.description, 1, 1500).label("text"))
-            .where(o.c.first_seen > now - DAYS * 86400).order_by(o.c.first_seen.desc()).limit(MAX_ROWS))
+            .where(o.c.first_seen > now - DAYS * 86400, or_(o.c.kind.is_(None), o.c.kind == "stage")).order_by(o.c.first_seen.desc()).limit(MAX_ROWS))
     with db.engine.connect() as c:
         rows = c.execute(stmt).all()
     out: dict[str, list[dict]] = {k: [] for k in dom.DOMAINS}
+    # Une offre ne change pas : son score par domaine est gardé d'un calcul à l'autre (tant que les mots-clés
+    # ne changent pas). Avant, les 2 500 offres étaient recalculées toutes les 10 minutes, ce qui occupait le
+    # petit processeur de Render plusieurs dizaines de secondes et faisait échouer son « health check ».
+    sig = hash(repr(sorted((k, c["strong"], c["tech"], c["negative"]) for k, c in crits.items())))
+    if _memo.get("sig") != sig:
+        _memo.clear()
+        _memo["sig"] = sig
+    seen = {"sig": sig}
     for r in rows:
         if not (r.url or "").lower().startswith(("https://", "http://")):
             continue
         published = scoring.published_date(r.published, r.first_seen)
         if scoring.too_old(published, DAYS * 3, now):
             continue
-        item = None
-        for k, crit in crits.items():
-            score = scoring.kw_score(r.title, r.text or "", crit)
-            if score < MIN_SCORE:
-                continue
-            if item is None:
-                item = {"id": r.id, "title": r.title, "company": r.company or "", "place": r.place or "", "url": r.url,
-                        "source": r.source or "", "published": published, "first_seen": r.first_seen,
-                        "regions": dom.regions_of(r.place or ""), "anywhere": dom.place_ok(r.place or "", ["__"])}
-            text = scoring.norm(f"{r.title} {r.text or ''}")   # compétences citées : sert aux pages publiques (seo.py)
-            out[k].append({**item, "score": score, "tech": [w for w in crit["tech"] if scoring._has(w, text)]})
+        hits = _memo.get(r.id)
+        if hits is None:
+            t, d = scoring.norm(r.title), scoring.norm(r.text or "")
+            text = f"{t} {d}"   # compétences citées : sert aux pages publiques (seo.py)
+            hits = {}
+            for k, crit in crits.items():
+                score = scoring.kw_score_n(t, d, crit)
+                if score >= MIN_SCORE:
+                    hits[k] = (score, [w for w in crit["tech"] if scoring._has(w, text)])
+        seen[r.id] = hits
+        if not hits:
+            continue
+        item = {"id": r.id, "title": r.title, "company": r.company or "", "place": r.place or "", "url": r.url,
+                "source": r.source or "", "published": published, "first_seen": r.first_seen,
+                "regions": dom.regions_of(r.place or ""), "anywhere": dom.place_ok(r.place or "", ["__"])}
+        for k, (score, tech) in hits.items():
+            out[k].append({**item, "score": score, "tech": tech})
+    _memo.clear()
+    _memo.update(seen)   # on ne garde que les offres encore présentes
     for k, items in out.items():
         # les nouveautés d'abord, puis les plus proches du domaine
         items.sort(key=lambda x: (x["first_seen"] > now - FRESH_HOURS * 3600, x["score"], x["first_seen"]), reverse=True)
@@ -78,6 +97,7 @@ def _data(now: float | None = None) -> dict[str, list[dict]]:
 
 def reset() -> None:
     _cache.update(at=0.0, data=None)
+    _memo.clear()
 
 
 def _filter(items: list[dict], region: str) -> list[dict]:

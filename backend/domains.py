@@ -101,8 +101,34 @@ DOMAINS = {
         "adzuna": ["stage marketing", "stage finance", "stage contrôle de gestion", "stage ressources humaines",
                    "stage business developer"],
     },
+    "rh": {
+        "label": "Ressources humaines, paie, ADP",
+        "strong": ["ressources humaines", "rh", "paie", "assistant rh", "assistante rh", "assistant ressources humaines",
+                   "assistante ressources humaines", "gestionnaire rh", "gestionnaire ressources humaines",
+                   "gestionnaire paie", "gestionnaire de paie", "assistant paie", "assistante paie", "adp",
+                   "administration du personnel", "chargé rh", "chargée rh", "chargé de recrutement",
+                   "chargée de recrutement", "office manager", "assistant administratif", "assistante administrative"],
+        "tech": ["silae", "sage", "cegid", "adp", "dsn", "sirh", "excel", "word", "contrat de travail", "droit social",
+                 "droit du travail", "mutuelle", "prévoyance", "variables de paie", "absences", "onboarding",
+                 "recrutement", "formation", "workday", "hr access", "pléiades", "urssaf", "convention collective",
+                 "entretiens annuels", "registre du personnel", "médecine du travail"],
+        "negative": ["commercial", "vendeur", "téléconseiller"],
+        "adzuna": ["stage ressources humaines", "stage paie", "stage assistant rh"],
+        # emploi (CDI) : intitulés tels que les recruteurs les écrivent
+        "cdi": ["assistant rh", "assistante rh", "gestionnaire rh", "gestionnaire paie", "assistant paie",
+                "assistante paie", "assistante adp", "administration du personnel"],
+    },
 }
 DEFAULT_DOMAINS = ["reseaux"]
+CONTRACTS = {"stage": "Un stage", "cdi": "Un emploi en CDI"}
+
+
+def cdi_queries(key: str, adzuna: list[str]) -> list[str]:
+    """Recherches pour un emploi en CDI : celles du domaine, sinon ses recherches de stage sans le mot « stage »."""
+    found = DOMAINS.get(key, {}).get("cdi")
+    if found:
+        return list(found)
+    return [re.sub(r"\bstage\b", " ", q).strip() for q in adzuna if re.sub(r"\bstage\b", " ", q).strip()]
 
 
 def labels() -> dict[str, str]:
@@ -194,6 +220,13 @@ REGIONS = {
             ["corse", "ajaccio", "bastia", "corte", "porto-vecchio", "calvi", "haute-corse", "corse-du-sud"]),
 }
 DEFAULT_REGIONS = ["idf"]
+
+
+# Ville principale et département de chaque région : une recherche d'emploi se fait « autour de » cette ville.
+MAIN_CITY = {"idf": ("Paris", "75"), "ara": ("Lyon", "69"), "occ": ("Toulouse", "31"), "naq": ("Bordeaux", "33"),
+             "paca": ("Marseille", "13"), "hdf": ("Lille", "59"), "ges": ("Strasbourg", "67"), "bre": ("Rennes", "35"),
+             "pdl": ("Nantes", "44"), "nor": ("Rouen", "76"), "bfc": ("Dijon", "21"), "cvl": ("Orléans", "45"),
+             "cor": ("Ajaccio", "2A")}
 
 
 def region_labels() -> dict[str, str]:

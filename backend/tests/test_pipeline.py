@@ -130,7 +130,7 @@ def handler(req: httpx.Request) -> httpx.Response:
             [{"id": i, "score": 85, "cv": cv, "raison": "Très proche du profil"} for i in ids])}]}}]})
     if "api.adzuna.com" in u:
         q = req.url.params.get("what_and")
-        adzuna_calls.append({"q": q, "where": req.url.params.get("where")})
+        adzuna_calls.append({"q": q, "where": req.url.params.get("where"), "permanent": req.url.params.get("permanent")})
         return httpx.Response(200, json={"results": ADZUNA.get(q, [])})
     if "api.brevo.com" in u:
         if mail_fail["on"]:
@@ -1037,3 +1037,52 @@ def test_seo_pages(monkeypatch):
     db.kv_set("seo_pages", None)
     board.reset()
     seo.reset()
+
+
+def test_cdi_search(monkeypatch):
+    """Recherche d'emploi en CDI (RH, autour de Lyon) : à part des stages, dans les deux sens."""
+    import board, domains
+    from fastapi.testclient import TestClient
+    import main
+    main._hits.clear()
+    job = lambda i, title, where: {"id": f"cdi{i}", "title": title, "company": {"display_name": f"Entreprise {i}"},
+                                   "location": {"display_name": where}, "redirect_url": f"https://adz.test/cdi{i}",
+                                   "description": "Gestion de la paie sur Silae, DSN, contrats de travail, mutuelle.",
+                                   "created": RECENT + "T08:00:00Z"}
+    ADZUNA["gestionnaire paie"] = [job(1, "Gestionnaire de paie H/F", "Lyon, Rhône"),
+                                   job(2, "Alternance - gestionnaire de paie", "Lyon, Rhône"),
+                                   job(3, "Stage gestionnaire paie", "Villeurbanne, Rhône")]
+    ADZUNA["assistant rh"] = [job(4, "Assistant RH / ADP (H/F)", "Vénissieux, Rhône")]
+    try:
+        with TestClient(main.app) as c:
+            r = c.post("/api/signup", json={"email": "lea@ex.fr", "password": "motdepasse1", "consent": True}).json()
+            h = {"Authorization": "Bearer " + r["token"]}
+            assert c.get("/api/public").json()["contracts"]["cdi"]
+            got = c.put("/api/criteria", json={"contract": "cdi", "domains": ["rh"], "regions": ["ara"]}, headers=h).json()
+            assert got["contract"] == "cdi" and got["goal"].startswith("Emploi en CDI") and "gestionnaire paie" in got["strong"]
+            monkeypatch.setenv("ADZUNA_APP_ID", "x"); monkeypatch.setenv("ADZUNA_APP_KEY", "y")
+            assert ("gestionnaire paie", "Lyon", "69") in collector.cdi_searches(scoring.criteria())
+            assert "rh" not in collector.domains_in_use()          # elle ne fait pas lancer de recherches de stage RH
+            adzuna_calls.clear()
+            run(collector.run_once(force=True))
+            cdi_calls = [x for x in adzuna_calls if x["permanent"] == "1"]
+            assert cdi_calls and all(x["where"] == "Lyon" for x in cdi_calls)
+            mine = set(rows(r["me"]["id"]))
+            assert {"Gestionnaire de paie H/F", "Assistant RH / ADP (H/F)"} <= mine
+            assert not any("stage" in t.lower() or "alternance" in t.lower() for t in mine)   # aucun stage chez elle
+            with db.engine.connect() as cn:
+                kinds = dict(cn.execute(db.select(db.offers.c.title, db.offers.c.kind)).all())
+            assert kinds["Gestionnaire de paie H/F"] == "cdi" and "Alternance - gestionnaire de paie" not in kinds
+            # les CDI ne vont ni chez les chercheurs de stage, ni sur la vitrine publique (pages « stage … »)
+            for u in accounts.everyone():
+                if u["id"] != r["me"]["id"]:
+                    assert "Gestionnaire de paie H/F" not in set(rows(u["id"]))
+            board.reset()
+            assert all(x["title"] != "Gestionnaire de paie H/F" for items in board._data().values() for x in items)
+            # retour aux stages : ses CDI encore « nouvelles » quittent sa liste
+            c.put("/api/criteria", json={"contract": "stage"}, headers=h)
+            run(collector.resync_one(r["me"]["id"]))
+            assert "Gestionnaire de paie H/F" not in set(rows(r["me"]["id"]))
+    finally:
+        for k in ("gestionnaire paie", "assistant rh"):
+            ADZUNA.pop(k, None)
