@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, post, put, ago, Dot, List, getToken, setToken, setOnLogout, useAction } from "./api.jsx";
 import Settings from "./Settings.jsx";
+import OmaimaCard, { isOmaima } from "./Omaima.jsx";
 import Admin from "./Admin.jsx";
 import Board from "./Board.jsx";
 import * as audience from "./analytics.js";
@@ -542,6 +543,7 @@ export default function App() {
       {flash && <p className="note">{flash}</p>}
       <Unverified me={me} />
       {tab === "feed" && <Start me={me} go={setTab} />}
+      {tab === "feed" && me.settings?.contract === "cdi" && isOmaima(me) && <OmaimaCard compact />}
       <div hidden={tab !== "feed"}><Feed me={me} onTrack={track} onUntrack={untrack} onAnalyse={toAI} status={status} refreshStatus={refreshStatus} reloadKey={feedKey} focusId={ctx?.id} toast={showToast} /></div>
       {tab === "track" && <Tracker apps={apps} reload={reload} />}
       {tab === "ai" && <Assistant me={me} setMe={setMe} offer={offer} setOffer={setOffer} cv={cv} setCv={setCv} goSettings={goSettings} ctx={ctx} onBack={() => setTab("feed")} onState={setCtxState} />}

@@ -216,6 +216,9 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   quelques heures. Pages Google : `/stages/ressources-humaines-paie` ajoutée. Tests simulés uniquement.
 - Code récupéré le 02/11 depuis GitHub (`CrazyHumanPLS/veille-stages`, **dépôt public** : aucun secret dedans,
   vérifié), l'ordinateur n'étant pas relié à la conversation.
+- Décoration personnelle (02/11, demandée par l'utilisateur) : `frontend/src/Omaima.jsx`, carte fleurie « Bonne recherche,
+  Omaima » affichée seulement si le prénom du compte est Omaima (ou Oumaima, accents ignorés) ET que la recherche est
+  « cdi » : dans Réglages → Je cherche et en haut de l'onglet Offres. Styles `.om-*` à la fin de `style.css`.
 - 18 tests automatiques réussis. Les derniers lots sont à pousser par l'utilisateur (GitHub Desktop).
 - Accès GitHub : seul `ChampionsLeague_DB` est autorisé pour Claude ; l'utilisateur doit ajouter `veille-stages`
   dans les dépôts autorisés pour que la session puisse pousser elle-même.

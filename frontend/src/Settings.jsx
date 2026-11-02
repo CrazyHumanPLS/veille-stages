@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, post, put, Dot, setToken, useAction } from "./api.jsx";
+import OmaimaCard, { isOmaima } from "./Omaima.jsx";
 
 const randomTopic = () => "veille-" + Array.from(crypto.getRandomValues(new Uint8Array(12)), b => "abcdefghjkmnpqrstuvwxyz23456789"[b % 31]).join("");
 
@@ -112,7 +113,7 @@ function AiKey({ me, setMe }) {
   </>);
 }
 
-function Search({ reloadMe, info }) {
+function Search({ me, reloadMe, info }) {
   const [crit, setCrit] = useState(null);
   const { msg, busy, act } = useAction();
   useEffect(() => { api("/api/criteria").then(setCrit).catch(() => {}); }, []);
@@ -130,6 +131,7 @@ function Search({ reloadMe, info }) {
         <legend>Je cherche</legend>
         {Object.entries(info?.contracts || { stage: "Un stage" }).map(([k, l]) => <label key={k} className={(crit.contract || "stage") === k ? "on" : ""}><input type="radio" name="contract" checked={(crit.contract || "stage") === k} onChange={() => setCrit({ ...crit, contract: k })} />{l}</label>)}
       </fieldset>
+      {crit.contract === "cdi" && isOmaima(me) && <OmaimaCard />}
       {crit.contract === "cdi" && <p className="mute">Emplois en CDI trouvés autour de la grande ville de chaque région cochée (40 km), par exemple Lyon pour Auvergne-Rhône-Alpes. Les stages ne te sont plus proposés.</p>}
       <fieldset className="choices">
         <legend>Mes domaines</legend>
@@ -204,7 +206,7 @@ function Account({ me, setMe, onGone }) {
 export default function Settings({ me, setMe, reloadMe, onGone, info }) {
   return (<>
     {!me.ai.premium && <Premium me={me} info={info} />}
-    <Search reloadMe={reloadMe} info={info} />
+    <Search me={me} reloadMe={reloadMe} info={info} />
     <Alerts me={me} setMe={setMe} />
     <AiKey me={me} setMe={setMe} />
     {me.ai.premium && <Premium me={me} info={info} />}
