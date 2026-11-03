@@ -218,7 +218,8 @@ ne jamais la changer), `ADMIN_EMAIL`, `CRON_KEY`, `APP_URL`, `APP_NAME`, `GEMINI
   vérifié), l'ordinateur n'étant pas relié à la conversation.
 - Décoration personnelle (02/11, demandée par l'utilisateur) : `frontend/src/Omaima.jsx`, carte fleurie « Bonne recherche,
   Omaima » affichée seulement si le prénom du compte est Omaima (ou Oumaima, accents ignorés) ET que la recherche est
-  « cdi » : dans Réglages → Je cherche et en haut de l'onglet Offres. Styles `.om-*` à la fin de `style.css`.
+  « cdi » : dans Réglages → Je cherche et en haut de l'onglet Offres. Styles `.om-*` à la fin de `style.css`. Le 03/11 : poème (`POEM`) dans la grande carte et pluie de
+  fleurs (`Rain`, une fois par visite grâce à sessionStorage, bouton « Encore des fleurs », masquée si l'appareil réduit les animations).
 - Textes CDI (02/11) : dans Réglages, la phrase « Ce que tu veux comme… » et son exemple suivent `contract` ; à l'analyse
   du CV, l'« objectif » demandé à l'IA parle d'emploi en CDI si le compte cherche un CDI (`ai.analyse_cv(..., contract)`).
   Rappel : la phrase n'est remplie d'après le CV que si l'analyse réussit (adresse confirmée ou clé personnelle).
